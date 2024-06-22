@@ -1,0 +1,13 @@
+defaults:
+  - _self_
+  - enc_params: cnn_causal
+  - rnn_params: lrrnn
+
+dim_x: ${dataset.n_held_in}
+dim_z: 8
+dim_u: ${dataset.u}
+dim_N: 512
+dim_x_hat: ${dataset.n}
+enc_architecture: CNN_causal
+rnn_architecture: LRRNN
+causal: true

@@ -1,0 +1,13 @@
+program: train_scripts/hpc/run_training.py
+method: grid
+parameters:
+  seed:
+    values: [497430]   # Specify the seed values you want to try
+  first_layer:
+    values: [150, 25]  # Specify the sizes for the first layer of the CNN
+  n_epochs:
+    values: [3000]
+  batch_size:
+    values: [64]
+  rank:
+    values: [4, 6, 8]

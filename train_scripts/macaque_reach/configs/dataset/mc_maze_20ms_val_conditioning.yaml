@@ -1,0 +1,10 @@
+name: mc_maze_input
+phase: pos
+bin_size: 20
+input_field: input
+n: 182
+n_held_in: 137
+n_held_out: 45
+t_forward: 0
+u: 2
+cosmooth: false

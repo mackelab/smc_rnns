@@ -1,0 +1,10 @@
+.idea
+**/.ipynb_checkpoints
+**/__pycache__
+**/wandb
+data_untracked
+models_old
+.DS_Store
+*.pdf
+*.svg
+*.png

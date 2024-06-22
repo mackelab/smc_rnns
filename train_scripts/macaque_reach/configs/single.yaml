@@ -1,0 +1,5 @@
+defaults:
+  - _self_
+  - dataset: mc_maze_20ms_val_conditioning
+  - training_params: default
+  - vae_params: default
