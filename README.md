@@ -1,7 +1,7 @@
 # Inferring stochastic low-rank RNNs with variational sequential monte-carlo / particle filtering
 Code accompanying [Inferring stochastic low-rank recurrent neural networks from neural data](link)
 
-Matthijs Pals, Erdem Sağtekin, Felix Pei, Manuel Gloeckler and Jakob H Macke, 2024
+Matthijs Pals, A Erdem Sağtekin, Felix Pei, Manuel Gloeckler and Jakob H Macke, 2024
 
 ### Quick start:
 ```
