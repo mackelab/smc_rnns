@@ -123,7 +123,7 @@ class VAE(nn.Module):
         batch_size, dim_x, time_steps = x.shape
 
         # Get the initial prior mean
-        prior_mean = self.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)
+        prior_mean = self.rnn.get_initial_state(u[:,:,0]).unsqueeze(2).expand(batch_size,self.dim_z,k) #BS,Dz,K
 
         x = x.unsqueeze(-1)  # add particle dimension
 
