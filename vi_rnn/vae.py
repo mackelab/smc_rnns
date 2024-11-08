@@ -228,7 +228,6 @@ class VAE(nn.Module):
                 v = self.rnn.transition.step_input(v, u[:, :, t - 1].unsqueeze(2))
             else:
                 v = u[:, :, t].unsqueeze(2)
-            # print(np.max(v.cpu().detach().numpy()))
             # Calculate the Kalman gain and interpolation alpha
             Kalman_gain = (
                 eff_var_prior
@@ -239,9 +238,13 @@ class VAE(nn.Module):
             one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
 
             # Calculate the posterior mean and Joseph stabilised covariance
-            v_to_X = torch.einsum(
-                "xv, bvk -> bxk", self.rnn.transition.Wu, v.squeeze(-2)
-            )
+            if self.rnn.params['readout_from']=="currents":
+                v_to_X = torch.einsum(
+                    "xv, bvk -> bxk", self.rnn.transition.Wu, v.squeeze(-2)
+                )
+            else: 
+                v_to_X =0
+            
             x_t = x[:, :, t] - Obs_bias - v_to_X
 
             mean_Q = torch.einsum(

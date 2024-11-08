@@ -19,7 +19,7 @@ dim_N = 512  # number of neurons
 n_runs = 1  # number of runs
 data_eval_name = "EEG_data_smoothed.npy"  # Use smooth on data
 data_name = "EEG_data_zscored.npy"  # Use raw (but zcored) data for training
-wandb = True  # Sync with wandb
+wandb = False  # Sync with wandb
 n_epochs = 1500  # number of epochs
 bs = 10  # batch size
 cuda = True  # use cuda
@@ -67,7 +67,7 @@ for _ in range(n_runs):
         "activation": "relu",
         "exp_par": True,
         "shared_tau": 0.9,
-        "readout_rates": False, 
+        "readout_from": "z", 
         "train_obs_bias": True,
         "train_obs_weights": True,
         "train_latent_bias": False,
