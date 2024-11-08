@@ -1,0 +1,3 @@
+_target_: lfads_torch.datamodules.BasicDataModule
+datafile_pattern: ~/vi_rnns/data_untracked/train_hpc2_lfads.h5
+batch_size: 128

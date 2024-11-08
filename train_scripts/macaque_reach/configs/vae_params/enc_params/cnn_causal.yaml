@@ -2,5 +2,6 @@ init_kernel_sizes: [14, 4, 2]
 nonlinearity: gelu
 n_channels: [128, 64]
 init_scale: .05
+padding_location : acausal
 constant_var: false
-padding_mode: reflect # constant reflect replicate or circular
+padding_mode: constant #reflect #reflect # constant reflect replicate or circular

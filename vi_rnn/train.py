@@ -120,6 +120,12 @@ def train_VAE(
     # start timer before training
     time0 = time.time()
 
+    # backwards compat
+    if "sim_v" not in training_params.keys():
+        training_params["sim_v"] = False
+    elif training_params["sim_v"]:
+        print("Simulating V")
+
     for i in range(curr_epoch, training_params["n_epochs"]):
         with torch.no_grad():
             # DO EVALUATION
@@ -188,26 +194,68 @@ def train_VAE(
 
             optimizer.zero_grad()
             # forward pass
+
+            # optimal proposal, can be used with linear Gaussian observations
             if training_params["loss_f"] == "opt_VGTF":
-                Loss_it, Z, Esample, ll_x, ll_z, H, log_likelihood, alphas = (
-                    vae.forward_Optimal_VGTF(
-                        inputs,
-                        u=stim,
-                        k=training_params["k"],
-                        resample=training_params["resample"],
-                    )
+                (
+                    Loss_it,
+                    Z,
+                    _,
+                    ll_x,
+                    ll_z,
+                    H,
+                    log_likelihood,
+                    alphas,
+                ) = vae.forward_Optimal_VGTF(
+                    inputs,
+                    u=stim,
+                    k=training_params["k"],
+                    resample=training_params["resample"],
+                    sim_v=training_params["sim_v"],
                 )
+
+            # else we learn a parameterised encoder network
             elif training_params["loss_f"] == "VGTF":
-                Loss_it, Z, Esample, ll_x, ll_z, H, log_likelihood, alphas = (
-                    vae.forward_VGTF(
-                        inputs,
-                        u=stim,
-                        k=training_params["k"],
-                        resample=training_params["resample"],
-                        out_likelihood=training_params["observation_likelihood"],
-                        t_forward=training_params["t_forward"],
-                    )
+                Loss_it, Z, _, ll_x, ll_z, H, log_likelihood, alphas = vae.forward_VGTF(
+                    inputs,
+                    u=stim,
+                    k=training_params["k"],
+                    resample=training_params["resample"],
+                    out_likelihood=training_params["observation_likelihood"],
+                    t_forward=training_params["t_forward"],
+                    sim_v=training_params["sim_v"],
                 )
+
+            # don't use an encoder, just sample from RNN (bootstrap proposal)
+            elif training_params["loss_f"] == "bs_VGTF":
+                (
+                    Loss_it,
+                    Z,
+                    _,
+                    ll_x,
+                    ll_z,
+                    H,
+                    log_likelihood,
+                    alphas,
+                ) = vae.forward_bootstrap_VGTF(
+                    inputs,
+                    u=stim,
+                    k=training_params["k"],
+                    resample=training_params["resample"],
+                    out_likelihood=training_params["observation_likelihood"],
+                    t_forward=training_params["t_forward"],
+                    sim_v=training_params["sim_v"],
+                )
+
+            # deterministic setting (generalised teacher forcing)
+            elif training_params["loss_f"] == "GTF":
+                Loss_it, Z, _, ll_x, ll_z, H, log_likelihood, alphas = vae.forward_GTF(
+                    inputs,
+                    u=stim,
+                    alpha=training_params["alpha"],
+                    sim_v=training_params["sim_v"],
+                )
+
             batch_ll += log_likelihood.mean().item()
             batch_ll_x += ll_x.mean().item()
             batch_ll_z += ll_z.mean().item()
@@ -220,7 +268,6 @@ def train_VAE(
                 print("UH OH FOUND NAN, stopping training...")
                 stop_training = True
                 break
-
             # backprop
             loss.backward()
 
@@ -292,7 +339,9 @@ def train_VAE(
     print("\nDone. Training took %.1f sec." % (time.time() - time0))
 
     # save trained network
-    fname = save_model(vae, training_params, task.task_params, directory=out_dir)
+    fname = save_model(
+        vae, training_params, task.task_params, directory=out_dir, name=fname
+    )
     print("Saved: " + fname)
     # upload trained models to WandB
     if sync_wandb:

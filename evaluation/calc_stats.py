@@ -61,7 +61,8 @@ def calculate_correlation(data):
     correlation_matrix = np.corrcoef(data, rowvar=False)
     return correlation_matrix
 
-def calc_isi_stats_per_trial(spikes, dt=1,exclude_thr=1):
+
+def calc_isi_stats_per_trial(spikes, dt=1, exclude_thr=1):
     """Calculate the CV and mean of the ISI per neuron for a dataset
         with trial structure (Bs trials)
     Args:
@@ -79,12 +80,13 @@ def calc_isi_stats_per_trial(spikes, dt=1,exclude_thr=1):
     Std_isi = []
 
     for i in range(n_neurons):
-        spike_traces = spikes[:,:,i]
-        isi = np.concatenate([np.diff(np.where(spike_trace)[0]*dt)
-                    for spike_trace in spike_traces])
-        std=np.std(isi)
+        spike_traces = spikes[:, :, i]
+        isi = np.concatenate(
+            [np.diff(np.where(spike_trace)[0] * dt) for spike_trace in spike_traces]
+        )
+        std = np.std(isi)
         mean = np.mean(isi)
-        if len(isi)<exclude_thr or std==0:
+        if len(isi) < exclude_thr or std == 0:
             print("setting to nan, neuron " + str(i))
             CVs_isi.append(np.nan)
             Means_isi.append(np.nan)

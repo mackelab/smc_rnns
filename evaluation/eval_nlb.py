@@ -1,22 +1,18 @@
 import sys
-import shutil
 from pathlib import Path
 
 sys.path.insert(1, str(Path(__file__).absolute().parent.parent.parent))
+sys.path.insert(1, str(Path(__file__).absolute().parent.parent))
 
 from vi_rnn.saving import load_model
 from vi_rnn.datasets import NLBDataset, load_nlb_dataset
 from nlb_tools.evaluation import evaluate, fit_and_eval_decoder
-from torch.utils.data import Dataset, DataLoader
-from datetime import datetime
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 import h5py
 import itertools
 
-import hydra
 from omegaconf import OmegaConf
 
 
@@ -31,7 +27,7 @@ def eval_nlb(
     device="cuda",
     smooth=False,
 ):
-    """Function for the NLB evaluation 
+    """Function for the NLB evaluation
     Args:
         config (OmegaConf): configuration file
         vae (VAE): trained VAE model
@@ -45,7 +41,7 @@ def eval_nlb(
     Returns:
         results (dict): evaluation results
         submission (dict): submission dictionary
-    
+
     """
     t_held_in = eval_dataset.data.shape[1]
     n_held_in = eval_dataset.data.shape[2]
@@ -133,10 +129,18 @@ def eval_nlb(
         }
     }
     if t_held_out > 0:
-        submission[name]["train_rates_heldin_forward"] = training_predictions[:, t_held_in:, :n_held_in]
-        submission[name]["train_rates_heldout_forward"] = training_predictions[:, t_held_in:, n_held_in:]
-        submission[name]["eval_rates_heldin_forward"] = eval_predictions[:, t_held_in:, :n_held_in]
-        submission[name]["eval_rates_heldout_forward"] = eval_predictions[:, t_held_in:, n_held_in:]
+        submission[name]["train_rates_heldin_forward"] = training_predictions[
+            :, t_held_in:, :n_held_in
+        ]
+        submission[name]["train_rates_heldout_forward"] = training_predictions[
+            :, t_held_in:, n_held_in:
+        ]
+        submission[name]["eval_rates_heldin_forward"] = eval_predictions[
+            :, t_held_in:, :n_held_in
+        ]
+        submission[name]["eval_rates_heldout_forward"] = eval_predictions[
+            :, t_held_in:, n_held_in:
+        ]
     if target is not None:
         results = evaluate(str(target), submission)[0]
         results = results[list(results.keys())[0]]
@@ -275,18 +279,20 @@ def eval_velocity(
 
 if __name__ == "__main__":
     # configure evaluation
-    DATA_ROOT = Path(__file__).absolute().parent.parent.parent.parent / "data" / "processed"
+    DATA_ROOT = Path(__file__).absolute().parent.parent / "data_untracked" / "processed"
     RUN_ROOT = Path(__file__).absolute().parent.parent.parent.parent / "runs"
-
+    # /home/matthijs/runs/reach_nlb/
     RUN_NAME = "maze_rs1"
     MODEL_NAME = "004"
     CHKPT = "best"
     PHASE = "test"
     SWEEP = False
+    smooth = False
     n_particles_sweep = [64, 128, 192]
     n_repeats_sweep = [16, 32]
 
     model_dir = RUN_ROOT / RUN_NAME / MODEL_NAME
+    model_dir = Path("/home/matthijs/runs/reach_nlb/")
 
     config = OmegaConf.load(model_dir / "config.yaml")
     chkpt_path = model_dir / "checkpoints" / CHKPT
@@ -304,15 +310,18 @@ if __name__ == "__main__":
         model_save_name = model_save_name.replace(suffix, "")
     model_save_name = str(chkpt_path / model_save_name)
     vae, vae_params, task_params, training_params = load_model(model_save_name)
-
     # set up dataset
     dataset_config = {**config.dataset}
     dataset_config["phase"] = "val"
-    train_data, eval_data, train_inputs, eval_inputs = load_nlb_dataset(data_root=DATA_ROOT, **dataset_config)
+    train_data, eval_data, train_inputs, eval_inputs = load_nlb_dataset(
+        data_root=DATA_ROOT, **dataset_config
+    )
     train_dataset = NLBDataset(
         train_data, dict(name=config.dataset.name), inputs=train_inputs
     )
-    eval_dataset = NLBDataset(eval_data, dict(name=config.dataset.name), inputs=eval_inputs)
+    eval_dataset = NLBDataset(
+        eval_data, dict(name=config.dataset.name), inputs=eval_inputs
+    )
 
     if config.training_params["cuda"]:
         if not torch.cuda.is_available():
@@ -340,7 +349,9 @@ if __name__ == "__main__":
 
     if SWEEP:
         result_df = []
-        for n_particles, n_repeats in itertools.product(n_particles_sweep, n_repeats_sweep):
+        for n_particles, n_repeats in itertools.product(
+            n_particles_sweep, n_repeats_sweep
+        ):
             print(f"{n_particles=}, {n_repeats=}")
             results = eval_nlb(
                 config,
@@ -351,9 +362,11 @@ if __name__ == "__main__":
                 n_particles=n_particles,
                 n_repeats=n_repeats,
                 device="cuda",
-                smooth=True,
+                smooth=smooth,
             )[0]
-            result_df.append(dict(n_particles=n_particles, n_repeats=n_repeats, **results))
+            result_df.append(
+                dict(n_particles=n_particles, n_repeats=n_repeats, **results)
+            )
             print(results)
         result_df = pd.DataFrame(result_df)
         result_df.to_csv("sweep.csv")
@@ -366,11 +379,16 @@ if __name__ == "__main__":
 
     dataset_config = {**config.dataset}
     dataset_config["phase"] = PHASE
-    train_data, eval_data, train_inputs, eval_inputs = load_nlb_dataset(**dataset_config)
+    print(dataset_config)
+    train_data, eval_data, train_inputs, eval_inputs = load_nlb_dataset(
+        data_root=DATA_ROOT, **dataset_config
+    )
     train_dataset = NLBDataset(
         train_data, dict(name=config.dataset.name), inputs=train_inputs
     )
-    eval_dataset = NLBDataset(eval_data, dict(name=config.dataset.name), inputs=eval_inputs)
+    eval_dataset = NLBDataset(
+        eval_data, dict(name=config.dataset.name), inputs=eval_inputs
+    )
 
     if config.training_params["cuda"]:
         if not torch.cuda.is_available():
@@ -405,7 +423,7 @@ if __name__ == "__main__":
         n_particles=n_particles,
         n_repeats=n_repeats,
         device="cuda",
-        smooth=True,
+        smooth=smooth,
     )
     print(results)
 

@@ -5,6 +5,6 @@ input_field: null
 n: 182
 n_held_in: 137
 n_held_out: 45
-t_forward: 0
+t_forward: 10
 u: 0
 cosmooth: true

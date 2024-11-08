@@ -11,8 +11,8 @@ RUN_ROOT = str(Path(__file__).absolute().parent.parent.parent.parent / "runs")
 
 # parse search args
 parser = argparse.ArgumentParser(description="Train random search on NLB dataset")
-parser.add_argument('--run_name', '-r', type=str)
-parser.add_argument('--num_models', '-n', type=int, default=10)
+parser.add_argument("--run_name", "-r", type=str)
+parser.add_argument("--num_models", "-n", type=int, default=10)
 args, extras = parser.parse_known_intermixed_args()
 run_name = args.run_name
 n_runs = args.num_models

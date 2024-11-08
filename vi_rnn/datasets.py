@@ -55,14 +55,13 @@ class Oscillations_Cont(Dataset):
             decay (float): decay rate
 
         """
-
         self.dur = task_params["dur"]
         self.n_trials = task_params["n_trials"]
         self.N = task_params["n_neurons"]
-        self.w = task_params["w"]
         self.non_lin = task_params["non_lin"]
         self.R_z = task_params["R_z"]
         self.R_x = task_params["R_x"]
+        self.task_params = task_params
 
         ph0 = torch.randn(self.n_trials) * np.pi * 2
         if "r0" in task_params:
@@ -87,10 +86,10 @@ class Oscillations_Cont(Dataset):
             for t in range(self.dur):
                 self.data[:, :, t] = self.non_lin(
                     U @ self.latents[:, :, t] + B.unsqueeze(1)
-                )
+                )[: self.N]
         elif task_params["out"] == "currents":
             for t in range(self.dur):
-                self.data[:, :, t] = U @ self.latents[:, :, t]
+                self.data[:, :, t] = (U @ self.latents[:, :, t])[: self.N]
         self.data += torch.randn(self.N, self.n_trials, self.dur) * self.R_x
         self.data_eval = self.data
 
@@ -129,7 +128,6 @@ class Oscillations_Poisson(Dataset):
         self.dur = task_params["dur"]
         self.n_trials = task_params["n_trials"]
         self.N = task_params["n_neurons"]
-        self.w = task_params["w"]
         self.non_lin = task_params["non_lin"]
         self.R_z = task_params["R_z"]
 
@@ -231,22 +229,27 @@ class Reaching_Teacher(Dataset):
         self.latents[0, :, 0] = r0 * np.cos(ph0)
         self.latents[1, :, 0] = r0 * np.sin(ph0)
         self.latents[:, :, 0] += torch.randn(2, self.n_trials) * self.R_z
-
+        self.v = torch.zeros(self.n_trials, self.dur, 2, dtype=torch.float32)
         for t in range(1, self.dur):
+            if task_params["sim_v"] == True:
+                self.v[:, t] = decay * self.v[:, t - 1] + (1 - decay) * (s[:, t - 1])
+            else:
+                self.v[:, t] = s[:, t]
             self.latents[:, :, t] = decay * self.latents[:, :, t - 1]
-            X = U @ self.latents[:, :, t - 1] + B.unsqueeze(1) + (s[:, t - 1] @ I).T
+            X = U @ self.latents[:, :, t - 1] + (self.v[:, t - 1] @ I).T
             self.latents[:, :, t] += (
-                V @ self.non_lin(X) + torch.randn(2, self.n_trials) * self.R_z
+                V @ self.non_lin(X + B.unsqueeze(1))
+                + torch.randn(2, self.n_trials) * self.R_z
             )
 
         if task_params["out"] == "rates":
             for t in range(self.dur):
                 self.data[:, :, t] = self.non_lin(
-                    U @ self.latents[:, :, t] + B.unsqueeze(1)
+                    U @ self.latents[:, :, t] + B.unsqueeze(1) + (self.v[:, t] @ I).T
                 )
         elif task_params["out"] == "currents":
             for t in range(self.dur):
-                self.data[:, :, t] = U @ self.latents[:, :, t]
+                self.data[:, :, t] = U @ self.latents[:, :, t] + (self.v[:, t] @ I).T
         self.data += torch.randn(self.N, self.n_trials, self.dur) * self.R_x
         self.data_eval = self.data
         self.task_params = task_params
@@ -361,6 +364,147 @@ class SineWave(Dataset):
         return inputs, targets, mask
 
 
+class RDM(Dataset):
+    def __init__(self, task_params):
+        """
+        Initialize a random dot motion / perceptual decision making
+         / evidence integration task (for teacher network)
+        Args:
+            task_params: dictionary containing task parameters
+
+        Based on https://github.com/adrian-valente/populations_paper_code/blob/master/low_rank_rnns/rdm.py
+        Dubreuil A., Valente A., Beiran M., Mastrogiuseppe F., Ostojic S.
+        The role of population structure in computations through neural dynamics
+        Nature Neuroscience volume 25, pages 783–794 (2022)
+        """
+
+        self.task_params = task_params
+
+        if "coherences" not in task_params or task_params["coherences"] is None:
+            self.coherences = [-4, -2, -1, 1, 2, 4]
+        else:
+            self.coherences = task_params["coherences"]
+
+        self.fixation_dur = task_params["fixation_dur"]
+        self.stimulus_end = task_params["stimulus_dur"] + task_params["fixation_dur"]
+        self.response_begin = self.stimulus_end + task_params["delay_dur"]
+        self.total_duration = self.response_begin + task_params["response_dur"]
+
+        self.std = task_params["std"]
+        self.scale = task_params["scale"]
+
+    def __len__(self):
+        return len(self.coherences)
+
+    def __getitem__(self, idx):
+        """
+        Returns a trial
+
+        Args:
+            idx, trial index
+
+        Returns:
+            input, Tensor of size [seq_len, n_inp]
+            target, Tensor of size [seq_len, n_inp]
+            mask, Tensor of size [seq_len, n_inp]
+        """
+
+        inputs = self.std * torch.randn((self.total_duration, 1), dtype=torch.float32)
+        targets = torch.zeros((self.total_duration, 1), dtype=torch.float32)
+        mask = torch.zeros((self.total_duration, 1), dtype=torch.float32)
+
+        coh_current = self.coherences[idx]
+        inputs[self.fixation_dur : self.stimulus_end] += coh_current * self.scale
+        targets[self.response_begin :] = np.sign(coh_current)
+        mask[self.response_begin :] = 1
+        return inputs, targets, mask
+
+
+class RDM_Teacher(Dataset):
+    def __init__(self, task_params, task_params_teacher, U, V, B, I, decay=0.9):
+        """
+        Initialize Teacher data for Reaching task
+        Args:
+            task_params: dictionary containing task parameters
+            task_params_teacher: dictionary containing teacher task parameters
+            U: torch.tensor; N x R, input to hidden weights
+            V: torch.tensor; R x N, hidden to hidden weights
+            B: torch.tensor; N, biases
+            I: torch.tensor; 1 x N, input to hidden weights
+            decay: float, decay rate
+        """
+
+        self.R_z = task_params["R_z"]
+        self.R_x = task_params["R_x"]
+
+        # obtain teacher RNNs stimuli
+        reaching = RDM(task_params_teacher)
+        Reaching_loader = DataLoader(
+            reaching, batch_size=reaching.__len__(), shuffle=False
+        )
+        n_repeats = task_params["n_trials"] // reaching.__len__()
+
+        ss = []
+        for _ in range(n_repeats):
+            s, _, _ = next(iter(Reaching_loader))  # x = trial,time,stims
+            ss.append(s)
+        self.stim = torch.concatenate(ss)
+        self.dur = self.stim.shape[1]
+        self.n_trials = self.stim.shape[0]
+        self.N = U.shape[0]
+        self.non_lin = torch.nn.ReLU()
+
+        # generate teacher data
+        if "r0" in task_params:
+            r0 = task_params["r0"]
+        else:
+            r0 = torch.randn(self.n_trials) * 0.1
+        self.latents = torch.zeros(1, self.n_trials, self.dur, dtype=torch.float32)
+        self.data = torch.zeros(self.N, self.n_trials, self.dur, dtype=torch.float32)
+        self.latents[0, :, 0] = r0
+        self.latents[0, :, 0] += torch.randn(self.n_trials) * self.R_z
+        v = torch.zeros(self.n_trials, self.dur, 1, dtype=torch.float32)
+        for t in range(1, self.dur):
+            v[:, t] = decay * v[:, t - 1] + (1 - decay) * (self.stim[:, t - 1])
+            self.latents[:, :, t] = decay * self.latents[:, :, t - 1]
+            X = U @ self.latents[:, :, t - 1] + B.unsqueeze(1) + (v[:, t - 1] @ I).T
+            self.latents[:, :, t] += (
+                V @ self.non_lin(X) + torch.randn(self.n_trials) * self.R_z
+            )
+
+        if task_params["out"] == "rates":
+            for t in range(self.dur):
+                self.data[:, :, t] = self.non_lin(
+                    U @ self.latents[:, :, t] + B.unsqueeze(1) + (v[:, t] @ I).T
+                )
+        elif task_params["out"] == "currents":
+            for t in range(self.dur):
+                self.data[:, :, t] = U @ self.latents[:, :, t] + (v[:, t] @ I).T
+        self.data += torch.randn(self.N, self.n_trials, self.dur) * self.R_x
+        self.data_eval = self.data
+        self.task_params = task_params
+        self.v = v
+
+    def __len__(self):
+        """Return number of trials in an epoch"""
+        return self.n_trials
+
+    def __getitem__(self, idx):
+        """
+        Return a trial of length self.dur
+        Args:
+            idx (int): trial index
+        Returns:
+            trial (torch.tensor; dim_x x self.dur): trial of length self.dur
+            stim (torch.tensor; n_inp x self.dur): stimulus
+        """
+        stim = self.stim[idx].T.to(device=self.data.device)
+        return (
+            self.data[:, idx],
+            stim,
+        )  # torch.zeros(0,self.dur,dtype=torch.float32,device=stim.device)#stim
+
+
 class NLBDataset(Dataset):
     def __init__(self, data, params, inputs=None):
         self.data = data
@@ -384,7 +528,7 @@ class NLBDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx].T, self.stim[idx].T
-    
+
 
 def load_nlb_dataset(
     data_root: Path,
