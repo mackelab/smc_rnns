@@ -12,7 +12,8 @@ from pathlib import Path
 SAVE_NAME = "maze_co_nc"
 
 RUN_DIRS = [
-    Path("/mnt/qb/work/macke/mwe521/vi_rnns/runs/maze_co_rs0_nc"),
+    # Path("/mnt/qb/work/macke/mwe521/vi_rnns/runs/maze_co_rs0_nc"),
+    Path("/home/matthijs/runs/reach_nlb/"),  # checkpoints/last/")
 ]
 Path("./plots/").mkdir(exist_ok=True)
 Path("./results/").mkdir(exist_ok=True)

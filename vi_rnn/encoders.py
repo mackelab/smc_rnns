@@ -33,7 +33,6 @@ class Inverse_Observation(nn.Module):
         )
 
         # how much of the input data (in time steps) gets cut off in the forward pass
-        self.cut_len = 0
         self.mean = inv_obs
 
     def forward(self, x, k=1):
@@ -63,7 +62,7 @@ class Inverse_Observation(nn.Module):
         return z, mean, logvar, eps_sample
 
 
-class CNN_encoder_causal(nn.Module):
+class CNN_encoder(nn.Module):
     """
     This a CNN to parameterise e(z|x)
     """
@@ -75,12 +74,19 @@ class CNN_encoder_causal(nn.Module):
             dim_z (int): dimensionality of the latent space
             params (dict): dictionary of parameters
         """
-        super(CNN_encoder_causal, self).__init__()
+        super(CNN_encoder, self).__init__()
         self.dim_x = dim_x
         self.dim_z = dim_z
         kernels = params["init_kernel_sizes"]
         n_channels = params["n_channels"]
         self.params = params
+        print(
+            "using "
+            + params["padding_location"]
+            + " "
+            + params["padding_mode"]
+            + " padding"
+        )
 
         # initialise the convolutions
         initial_convs = []
@@ -99,8 +105,16 @@ class CNN_encoder_causal(nn.Module):
 
         for i in range(len(kernels) - 1):
 
-            # zero pad for causal convs
-            pad = (kernels[i] - 1, 0, 0, 0)
+            if params["padding_location"] == "causal":
+                # zero pad for causal convs
+                pad = (kernels[i] - 1, 0, 0, 0)
+            elif params["padding_location"] == "acausal":
+                # zero pad for acausal convs
+                pad = (0, kernels[i] - 1, 0, 0)
+            elif params["padding_location"] == "windowed":
+                # pad for windowed convs
+                pad = (kernels[i] // 2, (kernels[i] // 2) - 1, 0, 0)
+
             initial_convs.append(Pad(pad, mode=params["padding_mode"]))
             initial_convs.append(
                 nn.Conv1d(
@@ -118,7 +132,15 @@ class CNN_encoder_causal(nn.Module):
                 initial_convs.append(torch.nn.GELU())
                 initial_convs_std.append(torch.nn.GELU())
 
-        pad = (kernels[-1] - 1, 0, 0, 0)
+            if params["padding_location"] == "causal":
+                # zero pad for causal convs
+                pad = (kernels[-1] - 1, 0, 0, 0)
+            elif params["padding_location"] == "acausal":
+                # zero pad for acausal convs
+                pad = (0, kernels[-1] - 1, 0, 0)
+            elif params["padding_location"] == "windowed":
+                # pad for windowed convs
+                pad = (kernels[-1] // 2, (kernels[-1] // 2) - 1, 0, 0)
 
         initial_convs.append(Pad(pad, mode=params["padding_mode"]))
 
@@ -151,10 +173,6 @@ class CNN_encoder_causal(nn.Module):
 
         # initialise a distribution from which we can sample
         self.normal = torch.distributions.Normal(0, 1)
-
-        # how much of the input data (in time steps) gets cut off in the forward pass
-        self.cut_len = 0
-        print("cut_len: " + str(self.cut_len))
 
     def forward(self, x, k=1):
         """

@@ -47,7 +47,7 @@ def save_model(model, training_params, task_params, name=None, directory=None):
             directory += "/"
 
     model_params = model.vae_params
-    state_dict_file_prior = directory + name + "_state_dict_prior.pkl"
+    state_dict_file_prior = directory + name + "_state_dict_rnn.pkl"
     state_dict_file_encoder = directory + name + "_state_dict_enc.pkl"
 
     vae_params_file = directory + name + "_vae_params.pkl"
@@ -97,9 +97,13 @@ def load_model(name, load_encoder=True):
     # Backwards compatibility
     if "prior_params" in vae_params:
         vae_params["rnn_params"] = vae_params.pop("prior_params")
+    if "readout_rates" in vae_params["rnn_params"]:
+        vae_params["rnn_params"]["readout_from"] = vae_params["rnn_params"].pop(
+            "readout_rates"
+        )
+    if vae_params["rnn_params"]["readout_from"] == True:
+        vae_params["rnn_params"]["readout_from"] = "rates"
 
-    if vae_params["rnn_params"]["readout_rates"] == True:
-        vae_params["rnn_params"]["readout_rates"] = "rates"
     if (
         vae_params["rnn_params"]["activation"] == "relu"
         and "clipped" in vae_params
@@ -108,14 +112,13 @@ def load_model(name, load_encoder=True):
         vae_params["rnn_params"]["activation"] = "clipped_relu"
 
     if "out_nonlinearity" not in vae_params["rnn_params"]:
-        if training_params["observation_likelihood"]== "Gauss":
+        if training_params["observation_likelihood"] == "Gauss":
             vae_params["rnn_params"]["out_nonlinearity"] = "identity"
         elif "obs_rectify" in vae_params:
             vae_params["rnn_params"]["out_nonlinearity"] = vae_params.pop("obs_rectify")
         else:
             print("no out nonlinearity found, setting to identity")
-            vae_params["rnn_params"]["out_nonlinearity"] = "identity"            
-
+            vae_params["rnn_params"]["out_nonlinearity"] = "identity"
 
     model = VAE(vae_params)
 
@@ -151,5 +154,3 @@ class CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
-...
-# contents = pickle.load(f) becomes...

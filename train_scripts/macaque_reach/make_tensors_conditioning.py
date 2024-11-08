@@ -12,7 +12,9 @@ from nlb_tools.make_tensors import (
 
 # -- prepare loading NWB dataset ------------------
 DANDI_ROOT = Path(__file__).absolute().parent.parent.parent / "data_untracked" / "dandi"
-OUTPUT_ROOT = Path(__file__).absolute().parent.parent.parent / "data_untracked" / "processed"
+OUTPUT_ROOT = (
+    Path(__file__).absolute().parent.parent.parent / "data_untracked" / "processed"
+)
 data_map = {
     "mc_maze": DANDI_ROOT / "000128" / "sub-Jenkins",
     "mc_maze_large": DANDI_ROOT / "000138" / "sub-Jenkins",
@@ -23,12 +25,14 @@ print(f"Looking for files in directory {DANDI_ROOT}")
 print(f"Saving files in directory {OUTPUT_ROOT}")
 
 # -- args ------------
-parser = argparse.ArgumentParser(description="Pre-process NWB dataset for model training")
-parser.add_argument('-d', '--dataset', default="mc_maze", choices=list(data_map.keys()))
-parser.add_argument('-b', '--binsize', type=int, default=5)
+parser = argparse.ArgumentParser(
+    description="Pre-process NWB dataset for model training"
+)
+parser.add_argument("-d", "--dataset", default="mc_maze", choices=list(data_map.keys()))
+parser.add_argument("-b", "--binsize", type=int, default=5)
 args = parser.parse_args()
 dataset_name = args.dataset
-phase = "val" # conditioning not available for test data
+phase = "val"  # conditioning not available for test data
 bin_size = args.binsize
 input_mode = "pos"
 print(f"Preparing data from {dataset_name} dataset at bin size {bin_size}")

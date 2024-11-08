@@ -1,0 +1,76 @@
+dataset:
+  name: mc_maze
+  phase: val
+  bin_size: 20
+  input_field: null
+  'n': 182
+  n_held_in: 137
+  n_held_out: 45
+  t_forward: 10
+  u: 0
+  cosmooth: true
+training_params:
+  lr: 0.001
+  lr_end: 1.0e-05
+  opt_eps: 1.0e-08
+  n_epochs: 2000
+  grad_norm: 0
+  eval_epochs: 50
+  batch_size: 16
+  cuda: true
+  smoothing: 20
+  freq_cut_off: 10000
+  sim_obs_noise: 0
+  sim_latent_noise: 1
+  k: 64
+  loss_f: VGTF
+  resample: systematic
+  observation_likelihood: Poisson
+  t_forward: ${dataset.t_forward}
+  run_eval: false
+vae_params:
+  dim_x: ${dataset.n_held_in}
+  dim_z: 36
+  dim_u: ${dataset.u}
+  dim_N: 512
+  dim_x_hat: ${dataset.n}
+  enc_architecture: CNN
+  rnn_architecture: LRRNN
+  enc_params:
+    init_kernel_sizes:
+    - 14
+    - 4
+    - 2
+    nonlinearity: gelu
+    n_channels:
+    - 128
+    - 64
+    init_scale: 0.05
+    padding_location: causal
+    constant_var: false
+    padding_mode: reflect
+  rnn_params:
+    train_noise_x: false
+    train_noise_z: true
+    train_noise_z_t0: true
+    init_noise_z: 0.05
+    init_noise_z_t0: 1
+    init_noise_x: 0.1
+    scalar_noise_z: false
+    scalar_noise_x: false
+    scalar_noise_z_t0: false
+    identity_readout: false
+    activation: clipped_relu
+    exp_par: true
+    shared_tau: 0.9
+    readout_rates: false
+    train_obs_bias: true
+    train_obs_weights: true
+    train_latent_bias: false
+    train_neuron_bias: true
+    orth: false
+    m_norm: false
+    weight_dist: uniform
+    weight_scaler: 1
+    initial_state: zero
+    out_nonlinearity: softplus

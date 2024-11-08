@@ -133,7 +133,6 @@ VAE_params = {
     "enc_params": enc_params,
     "rnn_architecture": "LRRNN",
     "rnn_params": rnn_params,
-    "causal": True,
 }
 
 vae = VAE(VAE_params)

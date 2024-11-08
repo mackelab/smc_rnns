@@ -16,7 +16,9 @@ import h5py
 import hydra
 from omegaconf import OmegaConf
 
-DATA_ROOT = Path(__file__).absolute().parent.parent.parent / "data_untracked" / "processed"
+DATA_ROOT = (
+    Path(__file__).absolute().parent.parent.parent / "data_untracked" / "processed"
+)
 RUN_ROOT = Path(__file__).absolute().parent.parent.parent.parent / "runs"
 
 
@@ -40,8 +42,7 @@ def train(
     vae = VAE(OmegaConf.to_object(config.vae_params))
 
     train_data, eval_data, train_inputs, eval_inputs = load_nlb_dataset(
-        data_root=DATA_ROOT,
-        **OmegaConf.to_object(config.dataset)
+        data_root=DATA_ROOT, **OmegaConf.to_object(config.dataset)
     )
     train_dataset = NLBDataset(
         train_data, dict(name=config.dataset.name), inputs=train_inputs
@@ -99,6 +100,17 @@ def train(
 
     best_loss = np.inf
     nlb_results = []
+
+    if evaluate and run_eval_nlb:
+        results, submission = eval_nlb(
+            config,
+            vae,
+            train_dataset,
+            eval_dataset,
+            target_path,
+            device=device,
+        )
+        print(f"NLB eval: " + ", ".join([f"{k}={v:.4f}" for k, v in results.items()]))
 
     for i in range(0, n_epochs, step):
         for item in (chkpt_dir / "last").iterdir():
@@ -184,11 +196,12 @@ def train(
 if __name__ == "__main__":
     import sys
     import argparse
+
     parser = argparse.ArgumentParser(description="Train model on NLB dataset")
-    parser.add_argument('--run_name', '-r', type=str)
-    parser.add_argument('--plot',  action="store_true")
-    parser.add_argument('--no_evaluate',  action="store_true")
-    parser.add_argument('--patience', '-p', type=int, default=50)
+    parser.add_argument("--run_name", "-r", type=str)
+    parser.add_argument("--plot", action="store_true")
+    parser.add_argument("--no_evaluate", action="store_true")
+    parser.add_argument("--patience", "-p", type=int, default=50)
     args, extras = parser.parse_known_intermixed_args()
 
     i = 0

@@ -69,6 +69,7 @@ def eval_VAE(
                 z_hat, _, _, _ = vae.encoder(data.permute(1, 0, 2))
             else:
                 _, z_hat, _, _ = vae.encoder(data.permute(1, 0, 2))
+
             z0 = z_hat[:, :, :1]
             Z = vae.rnn.get_latent_time_series(
                 time_steps=T_data_trial,
