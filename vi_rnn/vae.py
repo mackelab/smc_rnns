@@ -151,20 +151,25 @@ class VAE(nn.Module):
                 @ B
                 @ torch.linalg.inv(torch.diag(eff_var_x) + B.T @ eff_var_prior_t0 @ B)
             )
+            alpha = Kalman_gain @ B.T
+            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
+
+            # Posterior Joseph stabilised Covariance
+            var_Q = (
+                one_min_alpha @ eff_var_prior_t0 @ one_min_alpha.T
+                + (Kalman_gain * torch.unsqueeze(eff_var_x, 0)) @ Kalman_gain.T
+            )
+
         else:  # this is generally faster for low-rank models
-            Kalman_gain = torch.linalg.inv(
+            var_Q = torch.linalg.inv(
                 torch.cholesky_inverse(eff_var_prior_t0_chol)
                 + (B * torch.unsqueeze(eff_var_x_inv, 0)) @ B.T
-            ) @ (B * torch.unsqueeze(eff_var_x_inv, 0))
+            )
+            Kalman_gain = var_Q @ (B * torch.unsqueeze(eff_var_x_inv, 0))
+            alpha = Kalman_gain @ B.T
+            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
 
-        alpha = Kalman_gain @ B.T
-        one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
-
-        # Posterior Joseph stabilised Covariance
-        var_Q = (
-            one_min_alpha @ eff_var_prior_t0 @ one_min_alpha.T
-            + (Kalman_gain * torch.unsqueeze(eff_var_x, 0)) @ Kalman_gain.T
-        )
+        # avoid numerical issues
         var_Q = (
             torch.eye(self.dim_z, device=alpha.device) * 1e-8 + (var_Q + var_Q.T) / 2
         )
@@ -221,20 +226,21 @@ class VAE(nn.Module):
                 @ B
                 @ torch.linalg.inv(torch.diag(eff_var_x) + B.T @ eff_var_prior @ B)
             )
+            alpha = Kalman_gain @ B.T
+            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
+            # Posterior Joseph stabilised Covariance
+            var_Q = (
+                one_min_alpha @ eff_var_prior @ one_min_alpha.T
+                + (Kalman_gain * torch.unsqueeze(eff_var_x, 0)) @ Kalman_gain.T
+            )
         else:
-            Kalman_gain = torch.linalg.inv(
+            var_Q = torch.linalg.inv(
                 torch.cholesky_inverse(eff_var_prior_chol)
                 + (B * torch.unsqueeze(eff_var_x_inv, 0)) @ B.T
-            ) @ (B * torch.unsqueeze(eff_var_x_inv, 0))
-
-        alpha = Kalman_gain @ B.T
-        one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
-
-        # Posterior Joseph stabilised Covariance
-        var_Q = (
-            one_min_alpha @ eff_var_prior @ one_min_alpha.T
-            + (Kalman_gain * torch.unsqueeze(eff_var_x, 0)) @ Kalman_gain.T
-        )
+            )
+            Kalman_gain = var_Q @ (B * torch.unsqueeze(eff_var_x_inv, 0))
+            alpha = Kalman_gain @ B.T
+            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
 
         var_Q = (
             torch.eye(self.dim_z, device=alpha.device) * 1e-8 + (var_Q + var_Q.T) / 2
