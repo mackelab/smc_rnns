@@ -11,8 +11,8 @@ class Basic_dataset(Dataset):
         Basic dataset class for time series data that returns a random trial of length self.dur
         Args:
             task_params (dict): dictionary of task parameters
-            data (np.ndarray; T x dim_x): time series data
-            data_eval (np.ndarray; T x dim_x): optional evaluation data
+            data (np.ndarray; dim_x x T): time series data
+            data_eval (np.ndarray; dim_x x T): optional evaluation data
         """
         self.task_params = task_params
         self.data = torch.from_numpy(data)
@@ -38,10 +38,10 @@ class Basic_dataset(Dataset):
         """
         t_start = torch.randint(low=0, high=self.data.shape[0] - self.dur, size=(1,))[0]
         t_end = t_start + self.dur
-        return self.data[t_start:t_end].T, torch.zeros(
+        return self.data[:,t_start:t_end], torch.zeros(
             0, self.dur, device=self.data.device
         )
-
+    
 
 class Oscillations_Cont(Dataset):
     def __init__(self, task_params, U, V, B, decay=0.9):
@@ -53,8 +53,11 @@ class Oscillations_Cont(Dataset):
             V (torch.tensor; R x N): (Scaled) Right singular vectors
             B (torch.tensor; N): biases
             decay (float): decay rate
-
+        Initialises:
+            self.data (torch.tensor; N_trials x self.dim_x x T): data
+            self.latents (torch.tensor; N_trials x self.dim_z x T): latents
         """
+
         self.dur = task_params["dur"]
         self.n_trials = task_params["n_trials"]
         self.N = task_params["n_neurons"]
@@ -62,35 +65,36 @@ class Oscillations_Cont(Dataset):
         self.R_z = task_params["R_z"]
         self.R_x = task_params["R_x"]
         self.task_params = task_params
-
-        ph0 = torch.randn(self.n_trials) * np.pi * 2
+        if "ph0" in task_params and task_params["ph0"] is not None:
+            ph0 = task_params["ph0"]
+        else:
+            ph0 = torch.randn(self.n_trials) * np.pi * 2
         if "r0" in task_params:
             r0 = task_params["r0"]
         else:
             r0 = torch.randn(self.n_trials) * 2
-        self.latents = torch.zeros(2, self.n_trials, self.dur, dtype=torch.float32)
-        self.data = torch.zeros(self.N, self.n_trials, self.dur, dtype=torch.float32)
-        self.latents[0, :, 0] = r0 * np.cos(ph0)
-        self.latents[1, :, 0] = r0 * np.sin(ph0)
-        self.latents[:, :, 0] += torch.randn(2, self.n_trials) * self.R_z
+        self.latents = torch.zeros(self.n_trials, 2, self.dur, dtype=torch.float32)
+        self.data = torch.zeros(self.n_trials, self.N,  self.dur, dtype=torch.float32)
+        self.latents[:, 0, 0] = r0 * np.cos(ph0)
+        self.latents[:, 1, 0] = r0 * np.sin(ph0)
+        self.latents[:, :, 0] += torch.randn(self.n_trials, 2) * self.R_z
 
-        # print(self.latents.shape)
         for t in range(1, self.dur):
-            self.latents[:, :, t] += decay * self.latents[:, :, t - 1]
-            self.latents[:, :, t] += (
-                V @ self.non_lin(U @ self.latents[:, :, t - 1] + B.unsqueeze(1))
-                + torch.randn(2, self.n_trials) * self.R_z
+            self.latents[:, :,t] += decay * self.latents[:, :, t - 1]
+            self.latents[:, :,t] += (
+                self.non_lin(self.latents[:, :, t - 1] @U.T + B.unsqueeze(0)) @ V.T
+                + torch.randn(self.n_trials, 2) * self.R_z
             )
 
         if task_params["out"] == "rates":
             for t in range(self.dur):
                 self.data[:, :, t] = self.non_lin(
-                    U @ self.latents[:, :, t] + B.unsqueeze(1)
-                )[: self.N]
+                    self.latents[:, :,t]@U.T + B.unsqueeze(0)
+                )[:, :self.N]
         elif task_params["out"] == "currents":
             for t in range(self.dur):
-                self.data[:, :, t] = (U @ self.latents[:, :, t])[: self.N]
-        self.data += torch.randn(self.N, self.n_trials, self.dur) * self.R_x
+                self.data[:, :, t] = (self.latents[:, :, t]@U.T)[:, :self.N]
+        self.data += torch.randn(self.n_trials, self.N, self.dur) * self.R_x
         self.data_eval = self.data
 
     def __len__(self):
@@ -103,12 +107,12 @@ class Oscillations_Cont(Dataset):
         Args:
             idx (int): trial index
         Returns:
-            trial (torch.tensor; dim_x x self.dur): trial of length self.dur
-            input (torch.tensor; n_inp x self.dur): optional input (here 0)
+            trial (torch.tensor; self.dur x dim_x): trial of length self.dur
+            input (torch.tensor; self.dur x dim_u): optional input (here 0)
         """
 
-        return self.data[:, idx], torch.zeros(
-            0, self.data.shape[2], device=self.data.device
+        return self.data[idx], torch.zeros(
+            self.data.shape[1],0, device=self.data.device
         )
 
 
@@ -121,42 +125,52 @@ class Oscillations_Poisson(Dataset):
             U (torch.tensor; N x R): Left singular vectors
             V (torch.tensor; R x N): (Scaled) Right singular vectors
             B (torch.tensor; N): biases
-            decay (float): decay rate
-
+            decay (float): decay rate   
+        Initialises:
+            self.data (torch.tensor N_trials x self.dim_x x T): Poisson spikes
+            self.rates (torch.tensor N_trials x self.dim_x x T): Poisson rates
+            self.latents (torch.tensor N_trials x self.dim_z x T): latents
         """
-        self.task_params = task_params
+
         self.dur = task_params["dur"]
         self.n_trials = task_params["n_trials"]
         self.N = task_params["n_neurons"]
         self.non_lin = task_params["non_lin"]
         self.R_z = task_params["R_z"]
+        self.task_params = task_params
 
-        ph0 = torch.randn(self.n_trials) * np.pi * 2
+        if "ph0" in task_params and task_params["ph0"] is not None:
+            ph0 = task_params["ph0"]
+        else:
+            ph0 = torch.randn(self.n_trials) * np.pi * 2       
         if "r0" in task_params:
             r0 = task_params["r0"]
         else:
             r0 = torch.randn(self.n_trials) * 2
-        self.latents = torch.zeros(2, self.n_trials, self.dur, dtype=torch.float32)
-        self.rates = torch.zeros(self.N, self.n_trials, self.dur, dtype=torch.float32)
-        self.latents[0, :, 0] = r0 * np.cos(ph0)
-        self.latents[1, :, 0] = r0 * np.sin(ph0)
-        self.latents[:, :, 0] += torch.randn(2, self.n_trials) * self.R_z
+        self.latents = torch.zeros(self.n_trials, 2, self.dur, dtype=torch.float32)
+        self.rates = torch.zeros(self.n_trials, self.N, self.dur, dtype=torch.float32)
+        self.latents[:, 0, 0] = r0 * np.cos(ph0)
+        self.latents[:, 1, 0] = r0 * np.sin(ph0)
+        self.latents[:, :, 0] += torch.randn(self.n_trials, 2) * self.R_z
 
+      
         for t in range(1, self.dur):
             self.latents[:, :, t] += decay * self.latents[:, :, t - 1]
             self.latents[:, :, t] += (
-                V @ self.non_lin(U @ self.latents[:, :, t - 1] + B.unsqueeze(1))
-                + torch.randn(2, self.n_trials) * self.R_z
+                self.non_lin(self.latents[:, :, t - 1] @U.T + B.unsqueeze(0)) @ V.T
+                + torch.randn(self.n_trials,2) * self.R_z
             )
 
         if task_params["out"] == "rates":
             for t in range(self.dur):
-                self.rates[:, :, t] = U @ self.non_lin(
-                    self.latents[:, :, t] + B.unsqueeze(1)
-                )
+                self.rates[:, :, t] = self.non_lin(
+                    self.latents[:, :, t]@U.T + B.unsqueeze(0)
+                )[:,:self.N]
         elif task_params["out"] == "currents":
             for t in range(self.dur):
-                self.rates[:, :, t] = U @ self.latents[:, :, t]
+                self.rates[:, :, t] = (self.latents[:, :, t]@U.T)[:, :self.N]
+
+
         self.rates *= task_params["B"]
         self.rates += task_params["Bias"]
 
@@ -179,11 +193,13 @@ class Oscillations_Poisson(Dataset):
         Args:
             idx (int): trial index
         Returns:
-            trial (torch.tensor; dim_x x self.dur): trial of length self.dur
-            input (torch.tensor; n_inp x self.dur): optional input (here 0)
+            trial (torch.tensor; self.dur x dim_x): trial of length self.dur
+            input (torch.tensor; self.dur x dim_u): optional input (here 0)
         """
 
-        return self.data[:, idx], torch.zeros(0, self.dur, device=self.data.device)
+        return self.data[idx], torch.zeros(
+            self.data.shape[1],0, device=self.data.device
+        )
 
 
 class Reaching_Teacher(Dataset):
@@ -198,6 +214,10 @@ class Reaching_Teacher(Dataset):
             B: torch.tensor; N, biases
             I: torch.tensor; n_inp x N, input to hidden weights
             decay: float, decay rate
+        Initialises:
+            self.data (torch.tensor N_trials x self.dim_x x T): data
+            self.v (torch.tensor N_trials x self.dim_u x T): input filtered by timeconstant
+            self.latents (torch.tensor N_trials x self.dim_z x T ):  latents
         """
 
         self.dur = task_params["dur"]
@@ -207,52 +227,64 @@ class Reaching_Teacher(Dataset):
         self.non_lin = task_params["non_lin"]
         self.R_z = task_params["R_z"]
         self.R_x = task_params["R_x"]
-        n_repeats = task_params["n_trials"] // task_params_teacher["n_stim"]
+        self.task_params = task_params
 
+        n_repeats = task_params["n_trials"] // task_params_teacher["n_stim"]
+        
+        if  task_params["n_trials"]%task_params_teacher["n_stim"] != 0:
+            n_repeats += 1
+        
         # obtain teacher RNNs stimuli
         reaching = Reaching(task_params_teacher)
         Reaching_loader = DataLoader(
             reaching, batch_size=task_params_teacher["n_stim"], shuffle=False
         )
         s, _, _ = next(iter(Reaching_loader))  # x = trial,time,stims
-        s = s.repeat(n_repeats, 1, 1)
+        s = s.repeat(n_repeats, 1, 1).permute(0,2,1)[:task_params["n_trials"]]
+        print(s.shape)
         self.stim = s
 
         # generate teacher data
-        ph0 = torch.randn(self.n_trials) * np.pi * 2
+        if "ph0" in task_params and task_params["ph0"] is not None:
+            ph0 = task_params["ph0"]
+        else:
+            ph0 = torch.randn(self.n_trials) * np.pi * 2
         if "r0" in task_params:
             r0 = task_params["r0"]
         else:
-            r0 = torch.randn(self.n_trials) * 0.1
-        self.latents = torch.zeros(2, self.n_trials, self.dur, dtype=torch.float32)
-        self.data = torch.zeros(self.N, self.n_trials, self.dur, dtype=torch.float32)
-        self.latents[0, :, 0] = r0 * np.cos(ph0)
-        self.latents[1, :, 0] = r0 * np.sin(ph0)
-        self.latents[:, :, 0] += torch.randn(2, self.n_trials) * self.R_z
-        self.v = torch.zeros(self.n_trials, self.dur, 2, dtype=torch.float32)
+            r0 = torch.randn(self.n_trials) * .1
+
+        self.latents = torch.zeros(self.n_trials, 2, self.dur, dtype=torch.float32)
+        self.data = torch.zeros(self.n_trials, self.N, self.dur, dtype=torch.float32)
+        self.latents[:, 0, 0] = r0 * np.cos(ph0)
+        self.latents[:, 1, 0] = r0 * np.sin(ph0)
+        self.latents[:, :, 0] += torch.randn(self.n_trials, 2) * self.R_z
+
+        # input filtered by timeconstant
+        self.v = torch.zeros(self.n_trials, 2, self.dur, dtype=torch.float32)
+
         for t in range(1, self.dur):
             if task_params["sim_v"] == True:
-                self.v[:, t] = decay * self.v[:, t - 1] + (1 - decay) * (s[:, t - 1])
+                self.v[:, :, t] = decay * self.v[:, :, t - 1] + (1 - decay) * (s[:, :, t - 1])
             else:
-                self.v[:, t] = s[:, t]
+                self.v[:, :, t] = s[:, :, t]
             self.latents[:, :, t] = decay * self.latents[:, :, t - 1]
-            X = U @ self.latents[:, :, t - 1] + (self.v[:, t - 1] @ I).T
+            X = self.latents[:, :, t - 1]@U.T + self.v[:, :, t - 1] @ I
             self.latents[:, :, t] += (
-                V @ self.non_lin(X + B.unsqueeze(1))
-                + torch.randn(2, self.n_trials) * self.R_z
+                self.non_lin(X + B.unsqueeze(0))@V.T
+                + torch.randn(self.n_trials, 2) * self.R_z
             )
 
         if task_params["out"] == "rates":
             for t in range(self.dur):
                 self.data[:, :, t] = self.non_lin(
-                    U @ self.latents[:, :, t] + B.unsqueeze(1) + (self.v[:, t] @ I).T
+                    self.latents[:, :, t]@U.T + self.v[:, t:, ] @ I + B.unsqueeze(0) 
                 )
         elif task_params["out"] == "currents":
             for t in range(self.dur):
-                self.data[:, :, t] = U @ self.latents[:, :, t] + (self.v[:, t] @ I).T
-        self.data += torch.randn(self.N, self.n_trials, self.dur) * self.R_x
+                self.data[:, :, t] =  self.latents[:, :, t]@U.T + self.v[:, :, t] @ I
+        self.data += torch.randn(self.n_trials, self.N, self.dur) * self.R_x
         self.data_eval = self.data
-        self.task_params = task_params
 
     def __len__(self):
         """Return number of trials in an epoch"""
@@ -267,8 +299,8 @@ class Reaching_Teacher(Dataset):
             trial (torch.tensor; dim_x x self.dur): trial of length self.dur
             stim (torch.tensor; n_inp x self.dur): stimulus
         """
-        stim = self.stim[idx].T.to(device=self.data.device)
-        return self.data[:, idx], stim
+        stim = self.stim[idx].to(device=self.data.device)
+        return self.data[idx], stim
 
 
 class Reaching(Dataset):
@@ -432,8 +464,11 @@ class RDM_Teacher(Dataset):
             B: torch.tensor; N, biases
             I: torch.tensor; 1 x N, input to hidden weights
             decay: float, decay rate
+        Initialises:
+            self.data (torch.tensor N_trials x self.dim_x x T): data
+            self.v (torch.tensor N_trials x self.dim_u x T: input filtered by timeconstant
+            self.latents (torch.tensor N_trials x self.dim_z x T):  latents
         """
-
         self.R_z = task_params["R_z"]
         self.R_x = task_params["R_x"]
 
@@ -443,12 +478,13 @@ class RDM_Teacher(Dataset):
             reaching, batch_size=reaching.__len__(), shuffle=False
         )
         n_repeats = task_params["n_trials"] // reaching.__len__()
-
+        if  task_params["n_trials"]%task_params_teacher["n_stim"] != 0:
+            n_repeats += 1
         ss = []
         for _ in range(n_repeats):
             s, _, _ = next(iter(Reaching_loader))  # x = trial,time,stims
             ss.append(s)
-        self.stim = torch.concatenate(ss)
+        self.stim = torch.concatenate(ss)[:task_params["n_trials"]]
         self.dur = self.stim.shape[1]
         self.n_trials = self.stim.shape[0]
         self.N = U.shape[0]
@@ -459,31 +495,34 @@ class RDM_Teacher(Dataset):
             r0 = task_params["r0"]
         else:
             r0 = torch.randn(self.n_trials) * 0.1
-        self.latents = torch.zeros(1, self.n_trials, self.dur, dtype=torch.float32)
-        self.data = torch.zeros(self.N, self.n_trials, self.dur, dtype=torch.float32)
-        self.latents[0, :, 0] = r0
-        self.latents[0, :, 0] += torch.randn(self.n_trials) * self.R_z
-        v = torch.zeros(self.n_trials, self.dur, 1, dtype=torch.float32)
+        self.latents = torch.zeros(self.n_trials, 1, self.dur, dtype=torch.float32)
+        self.data = torch.zeros(self.n_trials, self.N, self.dur, dtype=torch.float32)
+        self.latents[:, 0, 0] = r0
+        self.latents[:, 1, 0] += torch.randn(self.n_trials) * self.R_z
+        self.v = torch.zeros(self.n_trials, 1, self.dur, dtype=torch.float32)
         for t in range(1, self.dur):
-            v[:, t] = decay * v[:, t - 1] + (1 - decay) * (self.stim[:, t - 1])
+            if task_params["sim_v"] == True:
+                self.v[:, :, t] = decay * self.v[:, :, t - 1] + (1 - decay) * (s[:, :, t - 1])
+            else:
+                self.v[:, :, t] = s[:, :, t]
             self.latents[:, :, t] = decay * self.latents[:, :, t - 1]
-            X = U @ self.latents[:, :, t - 1] + B.unsqueeze(1) + (v[:, t - 1] @ I).T
+            X = self.latents[:, :, t - 1]@U.T + self.v[:, :, t - 1] @ I
             self.latents[:, :, t] += (
-                V @ self.non_lin(X) + torch.randn(self.n_trials) * self.R_z
+                self.non_lin(X + B.unsqueeze(0))@V.T
+                + torch.randn(self.n_trials, 2) * self.R_z
             )
+
 
         if task_params["out"] == "rates":
             for t in range(self.dur):
                 self.data[:, :, t] = self.non_lin(
-                    U @ self.latents[:, :, t] + B.unsqueeze(1) + (v[:, t] @ I).T
+                    self.latents[:, :, t]@U.T + self.v[:, :, t] @ I + B.unsqueeze(0) 
                 )
         elif task_params["out"] == "currents":
             for t in range(self.dur):
-                self.data[:, :, t] = U @ self.latents[:, :, t] + (v[:, t] @ I).T
-        self.data += torch.randn(self.N, self.n_trials, self.dur) * self.R_x
+                self.data[:, :, t] =  self.latents[:, :, t]@U.T + self.v[:, :, t] @ I
+        self.data += torch.randn(self.n_trials, self.Ns, self.dur) * self.R_x
         self.data_eval = self.data
-        self.task_params = task_params
-        self.v = v
 
     def __len__(self):
         """Return number of trials in an epoch"""
@@ -498,15 +537,20 @@ class RDM_Teacher(Dataset):
             trial (torch.tensor; dim_x x self.dur): trial of length self.dur
             stim (torch.tensor; n_inp x self.dur): stimulus
         """
-        stim = self.stim[idx].T.to(device=self.data.device)
-        return (
-            self.data[:, idx],
-            stim,
-        )  # torch.zeros(0,self.dur,dtype=torch.float32,device=stim.device)#stim
-
+        stim = self.stim[idx].to(device=self.data.device)
+        return self.data[idx], stim
 
 class NLBDataset(Dataset):
     def __init__(self, data, params, inputs=None):
+        """
+        Initialize Teacher data for Reaching task
+        Args:
+            data (torch.tensor ;N_trials x self.dim_x x T): data
+            params (dict): dictionary containing task parameters
+            inputs (None or torch.tensor; N_trials x self.dim_u x T: optional stimulus input
+        """
+
+
         self.data = data
         self.data_eval = data  # Not used in this setup
         self.trial_dur = data.shape[0]
@@ -516,8 +560,8 @@ class NLBDataset(Dataset):
             if inputs is not None
             else torch.zeros(
                 data.shape[0],
-                data.shape[1],
                 0,
+                data.shape[2],
                 device=self.data.device,
                 dtype=torch.float,
             )
@@ -527,7 +571,7 @@ class NLBDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data[idx].T, self.stim[idx].T
+        return self.data[idx], self.stim[idx]
 
 
 def load_nlb_dataset(
@@ -628,16 +672,16 @@ def load_nlb_dataset(
                 eval_inputs = np.apply_along_axis(smoothing_func, 1, eval_inputs)
                 assert eval_inputs.shape[1] == orig_len
     return (
-        torch.tensor(train_data, dtype=torch.float),
-        torch.tensor(eval_data, dtype=torch.float),
+        torch.tensor(train_data, dtype=torch.float).permute(0, 2, 1),
+        torch.tensor(eval_data, dtype=torch.float).permute(0, 2, 1),
         (
-            torch.tensor(train_inputs, dtype=torch.float)
+            torch.tensor(train_inputs, dtype=torch.float).permute(0, 2, 1)
             if train_inputs is not None
-            else train_inputs
+            else train_inputs.permute(0, 2, 1)
         ),
         (
-            torch.tensor(eval_inputs, dtype=torch.float)
+            torch.tensor(eval_inputs, dtype=torch.float).permute(0, 2, 1)
             if eval_inputs is not None
-            else eval_inputs
+            else eval_inputs.permute(0, 2, 1)
         ),
     )
