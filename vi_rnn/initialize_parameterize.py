@@ -29,7 +29,7 @@ def full_cov_embed(x):
     Return positive semi-definite matrix
     """
     
-    cov = lambda x:chol_cov_embed(x) @ (
+    cov = chol_cov_embed(x) @ (
     chol_cov_embed(x).T
     )
     return cov
