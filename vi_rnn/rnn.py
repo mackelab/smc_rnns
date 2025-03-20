@@ -149,17 +149,19 @@ class LRRNN(nn.Module):
 
         Returns:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
-            v (torch.tensor; n_trials x dim_z x time_steps x k): input filtered by RNN dynamics
+            v (torch.tensor; n_trials x dim_u x time_steps x k): input filtered by RNN dynamics
         """
         if u is not None and sim_v == False:
             v = u
+        elif u is None and v is None:
+            v = torch.zeros(z.shape[0],0,z.shape[2],z.shape[3],device=z.device)
         z = self.transition(z, v=v)
         if u is not None:
             v = self.transition.step_input(v, u)
 
         if noise_scale > 0:
-            if self.params["scalar_noise_z"] == "Cov":
-                cov_chol = self.chol_cov_embed(self.R_z)
+            if self.params["noise_z"] == "full":
+                cov_chol = chol_cov_embed(self.R_z)
                 z += noise_scale * torch.einsum(
                     "xz, BzTK -> BxTK", cov_chol, self.normal.sample(z.shape)
                 )
@@ -226,7 +228,7 @@ class LRRNN(nn.Module):
             else:
                 print("no input")
                 for t in range(time_steps + cut_off):
-                    z, _ = self.forward(z, noise_scale=noise_scale, v=torch.zeros(1))
+                    z, _ = self.forward(z, noise_scale=noise_scale)
                     Z.append(z[:, :, 0])
 
             # cut off the transients

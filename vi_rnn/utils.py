@@ -82,8 +82,8 @@ def extract_phase_plane_vae(vae, xlims, ylims, n_points=30, h=10, inp=None):
         norm: np.array (n_points x n_points), norm of the velocity field"""
     prior = vae.rnn.transition
     decay = prior.cast_A(prior.AW).detach().numpy().squeeze()
-    V = (prior.n * prior.scaling).detach().numpy()
-    U = prior.m_transform(prior.m).detach().numpy()
+    V = prior.n.detach().numpy()
+    U = prior.m.detach().numpy()
     B = prior.h.detach().numpy()
     if inp is None:
         I = np.zeros(1)
@@ -227,8 +227,8 @@ def get_loadings(vae):
     """
     prior = vae.rnn.transition
     tau = prior.cast_A(prior.AW).detach().numpy().squeeze()
-    pV = (prior.n * prior.scaling).detach().numpy()
-    pU = prior.m_transform(prior.m).detach().numpy()
+    pV = prior.n.detach().numpy()
+    pU = prior.m.detach().numpy()
     pB = prior.h.detach().numpy()
     pI = prior.Wu.detach().numpy()
     return tau, pV, pU, pB, pI
