@@ -33,91 +33,22 @@ class LRRNN(nn.Module):
         # Initialise noise
         # ------
 
-        # need to keep diag positive
-        self.chol_cov_embed = lambda x: torch.tril(x, diagonal=-1) + torch.diag_embed(
-            torch.exp(x[range(x.shape[0]), range(x.shape[0])] / 2)
-        )
-        self.full_cov_embed = lambda x: self.chol_cov_embed(x) @ (
-            self.chol_cov_embed(x).T
+        # Observation noise (not used when using Poisson observations)
+        self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
+            params["noise_x"], self.d_x, params["init_noise_x"], params["train_noise_x"]
         )
 
-        # initialise the observation noise
-        # only used with Gaussian observations
-        if params["scalar_noise_x"] == "Cov":
-            self.R_x = nn.Parameter(
-                torch.eye(self.d_x) * np.log(params["init_noise_x"]) * 2,
-                requires_grad=params["train_noise_x"],
-            )
-            self.std_embed_x = lambda x: torch.sqrt(
-                torch.diagonal(self.full_cov_embed(x))
-            )
-        elif params["scalar_noise_x"]:
-            self.R_x = nn.Parameter(
-                torch.ones(1) * np.log(params["init_noise_x"]) * 2,
-                requires_grad=params["train_noise_x"],
-            )
-            self.std_embed_x = lambda log_var: torch.exp(log_var / 2).expand(self.d_x)
-            self.var_embed_x = lambda log_var: torch.exp(log_var).expand(self.d_x)
-        else:
-            self.R_x = nn.Parameter(
-                torch.ones(self.d_x) * np.log(params["init_noise_x"]) * 2,
-                requires_grad=params["train_noise_x"],
-            )
-            self.std_embed_x = lambda log_var: torch.exp(log_var / 2)
-            self.var_embed_x = lambda log_var: torch.exp(log_var)
+        # Latent states transition noise
+        self.R_z, self.std_embed_z, self.var_embed_z = init_noise(
+            params["noise_z"], self.d_z, params["init_noise_z"], params["train_noise_z"]
+        )
 
-        # initialise the latent noise
-        if params["scalar_noise_z"] == "Cov":
-            self.R_z = nn.Parameter(
-                torch.eye(self.d_z) * np.log(params["init_noise_z"]) * 2,
-                requires_grad=params["train_noise_z"],
-            )
-            self.std_embed_z = lambda x: torch.sqrt(
-                torch.diagonal(self.full_cov_embed(x))
-            )
-            self.var_embed_z = lambda x: (self.full_cov_embed(x))
-        elif params["scalar_noise_z"]:
-            self.R_z = nn.Parameter(
-                torch.ones(1) * np.log(params["init_noise_z"]) * 2,
-                requires_grad=params["train_noise_z"],
-            )
-            self.std_embed_z = lambda log_var: torch.exp(log_var / 2).expand(self.d_z)
-            self.var_embed_z = lambda log_var: torch.exp(log_var).expand(self.d_z)
-        else:
-            self.R_z = nn.Parameter(
-                torch.ones(self.d_z) * np.log(params["init_noise_z"]) * 2,
-                requires_grad=params["train_noise_z"],
-            )
-            self.std_embed_z = lambda log_var: torch.exp(log_var / 2)
-            self.var_embed_z = lambda log_var: torch.exp(log_var)
+        # Initial latent state noise
+        self.R_z_t0, self.std_embed_z_t0, self.var_embed_z_t0 = init_noise(
+            params["noise_z_t0"], self.d_z, params["init_noise_z_t0"], params["train_noise_z_t0"]
+        )
 
-        #  initialise the latent noise for t = 0
-        if params["scalar_noise_z_t0"] == "Cov":
-            self.R_z_t0 = nn.Parameter(
-                torch.eye(self.d_z) * np.log(params["init_noise_z"]) * 2,
-                requires_grad=params["train_noise_z_t0"],
-            )
-            self.std_embed_z_t0 = lambda x: torch.sqrt(
-                torch.diagonal(self.full_cov_embed(x))
-            )
-            self.var_embed_z_t0 = lambda x: (self.full_cov_embed(x))
-        elif params["scalar_noise_z_t0"]:
-            self.R_z_t0 = nn.Parameter(
-                torch.ones(1) * np.log(params["init_noise_z_t0"]) * 2,
-                requires_grad=params["train_noise_z_t0"],
-            )
-            self.std_embed_z_t0 = lambda log_var: torch.exp(log_var / 2).expand(
-                self.d_z
-            )
-            self.var_embed_z_t0 = lambda log_var: torch.exp(log_var).expand(self.d_z)
-        else:
-            self.R_z_t0 = nn.Parameter(
-                torch.ones(self.d_z) * np.log(params["init_noise_z_t0"]) * 2,
-                requires_grad=params["train_noise_z_t0"],
-            )
-            self.std_embed_z_t0 = lambda log_var: torch.exp(log_var / 2)
-            self.var_embed_z_t0 = lambda log_var: torch.exp(log_var)
-
+             
         # initialise the transition step
         # ---------
         if "clipped" in params.keys():
@@ -145,8 +76,6 @@ class LRRNN(nn.Module):
                 exp_par=params["exp_par"],
                 shared_tau=params["shared_tau"],
                 weight_dist=params["weight_dist"],
-                m_orth=params["orth"],
-                weight_scaler=params["weight_scaler"],
                 train_latent_bias=params["train_latent_bias"],
                 train_neuron_bias=params["train_neuron_bias"],
             )
@@ -176,6 +105,8 @@ class LRRNN(nn.Module):
 
         # initialise the initial state
         # ---------
+
+        
         if "full_rank" in params.keys() and params["full_rank"] == True:
             self.initial_state = nn.Parameter(torch.zeros(self.d_z), requires_grad=True)
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(0)
@@ -187,7 +118,7 @@ class LRRNN(nn.Module):
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(
                 0
             ) + orth_proj(
-                self.transition.m_transform(self.transition.m),
+                self.transition.m,
                 torch.einsum("Nu,Bu->BN", self.transition.Wu, u),
             )
         elif params["initial_state"] == "trainable":
@@ -195,7 +126,7 @@ class LRRNN(nn.Module):
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(
                 0
             ) + orth_proj(
-                self.transition.m_transform(self.transition.m),
+                self.transition.m,
                 torch.einsum("Nu,Bu->BN", self.transition.Wu, u),
             )
 
@@ -203,7 +134,7 @@ class LRRNN(nn.Module):
             self.get_initial_state = lambda u: -self.transition.h.unsqueeze(
                 0
             ) + orth_proj(
-                self.transition.m_transform(self.transition.m),
+                self.transition.m,
                 torch.einsum("Nu,Bu->BN", self.transition.Wu, u),
             )
 
@@ -295,7 +226,7 @@ class LRRNN(nn.Module):
             else:
                 print("no input")
                 for t in range(time_steps + cut_off):
-                    z, _ = self.forward(z, noise_scale=noise_scale)
+                    z, _ = self.forward(z, noise_scale=noise_scale, v=torch.zeros(1))
                     Z.append(z[:, :, 0])
 
             # cut off the transients
@@ -325,7 +256,7 @@ class LRRNN(nn.Module):
         if self.readout_from == "rates":
             R = self.get_rates(z, u=v)
         elif self.readout_from == "currents":
-            m = self.transition.m_transform(self.transition.m)
+            m = self.transition.m
             if v is not None:
                 Wu = self.transition.Wu
                 R = torch.einsum("Nz,BzTK->BNTK", m, z) + torch.einsum(
@@ -355,7 +286,7 @@ class LRRNN(nn.Module):
         """
 
         if self.readout_from == "currents":
-            m = self.transition.m_transform(self.transition.m)
+            m = self.transition.m
             Wu = self.transition.Wu
             mW = torch.cat((m, Wu), dim=1)
             B_inv = torch.linalg.pinv(
@@ -395,7 +326,7 @@ class Observation(nn.Module):
             dx (int): dimensionality of the data
             train_bias (bool): whether to train the bias
             train_weights (bool): whether to train the weights
-            identity_readout (bool): whether to use the identity matrix as the readout matrix, 
+            identity_readout (bool): whether to use the identity matrix as the readout matrix,
                                      - set to True if a one-to-one mapping between observed and
                                      RNN units is desired!
             out_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
@@ -424,11 +355,13 @@ class Observation(nn.Module):
 
         # for Poisson we need to rectify outputs to be positive
         if out_nonlinearity == "exp":
-            self.nonlinearity = torch.exp
+            exp = torch.exp            
+            self.nonlinearity = lambda x: exp(x) + 1e-10
         elif out_nonlinearity == "relu":
             self.nonlinearity = lambda x: torch.relu(x) + 1e-10
         elif out_nonlinearity == "softplus":
-            self.nonlinearity = torch.nn.functional.softplus
+            sp = torch.nn.functional.softplus
+            self.nonlinearity = lambda x: sp(x) + 1e-6
         elif out_nonlinearity == "identity":
             self.nonlinearity = lambda x: x
 
@@ -458,8 +391,6 @@ class Transition(nn.Module):
         exp_par,
         shared_tau,
         weight_dist="uniform",
-        m_orth=False,
-        weight_scaler=1,
         train_latent_bias=True,
         train_neuron_bias=True,
     ):
@@ -471,8 +402,6 @@ class Transition(nn.Module):
             exp_par (bool): whether to use the exponential parameterisation for time constants
             shared_tau (bool): whether to have one shared time constant across the latent dimensions
             weight_dist (str): weight distribution
-            m_orth (bool): whether to orthogonalise the left singular vectors
-            weight_scaler (float): scaling factor for the weights
             train_latent_bias (bool): whether to train the bias of the latents (z)
             train_neuron_bias (bool): whether to train the bias of the neurons (x)
         """
@@ -532,24 +461,14 @@ class Transition(nn.Module):
         self.hz = nn.Parameter(torch.zeros(dz), requires_grad=train_latent_bias)
 
         # weights (left and right singular vectors)
-        if not m_orth:
-            if weight_dist == "uniform":
-                self.n, self.m = initialize_Ws_uniform(dz, hidden_dim)
-            elif weight_dist == "gauss":
-                self.n, self.m = initialize_Ws_gauss(dz, hidden_dim)
-            else:
-                print("WARNING: weight distribution not implemented, using uniform")
-                self.n, self.m = initialize_Ws_uniform(dz, hidden_dim)
-            self.m_transform = lambda x: x
-
+        if weight_dist == "uniform":
+            self.n, self.m = initialize_Ws_uniform(dz, hidden_dim)
+        elif weight_dist == "gauss":
+            self.n, self.m = initialize_Ws_gauss(dz, hidden_dim)
         else:
-            print("orthogonalising m")
-            # Orthonormal columns
-            self.m = orthogonal(nn.Linear(dz, hidden_dim, bias=False))
-            self.n, _ = initialize_Ws_uniform(dz, hidden_dim)
-            self.m_transform = lambda x: x.weight
-        self.scaling = weight_scaler
-        print("weight scaler", self.scaling)
+            print("WARNING: weight distribution not implemented, using uniform")
+            self.n, self.m = initialize_Ws_uniform(dz, hidden_dim)
+    
 
         # Input weights
         if self.du > 0:
@@ -564,7 +483,7 @@ class Transition(nn.Module):
         Latent RNN (internal) dynamics, one step forward
         Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
-            v (torch.tensor; n_trials x dim_u x time_steps x k): filtered input 
+            v (torch.tensor; n_trials x dim_u x time_steps x k): filtered input
         Returns:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         """
@@ -572,7 +491,7 @@ class Transition(nn.Module):
         R = self.get_rates(z, v=v)
         z = (
             A * z
-            + torch.einsum("zN,BNTK->BzTK", self.n * self.scaling, R)
+            + torch.einsum("zN,BNTK->BzTK", self.n, R)
             + self.hz.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         )
         return z
@@ -590,17 +509,14 @@ class Transition(nn.Module):
         v = A * v + (1 - A) * u
         return v
 
-    def get_rates(self, z, v=None):
+    def get_rates(self, z, v=0):
         """Transform latents to neuron activity
         Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
             v (torch.tensor; n_trials x dim_u x time_steps x k): filtered input
         Returns:
             R (torch.tensor; n_trials x dim_N x time_steps x k): neuron activity"""
-        m = self.m_transform(self.m)
-        X = torch.einsum("Nz,BzTK->BNTK", m, z)
-        if v is not None:
-            X += torch.einsum("Nu,BuTK->BNTK", self.Wu, v)
+        X = torch.einsum("Nz,BzTK->BNTK", self.m, z) + torch.einsum("Nu,BuTK->BNTK", self.Wu, v)
         R = self.nonlinearity(X, self.h.unsqueeze(0).unsqueeze(2).unsqueeze(3))
         return R
 
@@ -695,7 +611,7 @@ class Transition_FullRank(nn.Module):
         else:
             self.Wu = torch.zeros(dz, 0)
 
-    def forward(self, z, v=None):
+    def forward(self, z, v=0):
         """
         One step forward
         Args:
@@ -717,8 +633,8 @@ class Transition_FullRank(nn.Module):
             )
             + self.hz.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         )
-        if v is not None:
-            z += torch.einsum("Nu,BuTK->BNTK", self.Wu, v)
+
+        z += torch.einsum("Nu,BuTK->BNTK", self.Wu, v)
         return z
 
     def step_input(self, v, u):

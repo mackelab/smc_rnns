@@ -31,7 +31,7 @@ def construct_relu_matrix_list(dim: int, order: int):
     relu_matrix_list = np.empty((dim, dim, order))
     for i in range(order):
         # randomly sample a subregion
-        n = int(np.floor(np.random.rand(1)[0] * (2**dim)))
+        n = int(np.floor(np.random.rand(1)[0] * (2 ** dim)))
         relu_matrix_list[:, :, i] = construct_relu_matrix(n, dim)
     return relu_matrix_list
 

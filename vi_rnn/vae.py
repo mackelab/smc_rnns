@@ -9,7 +9,7 @@ from vi_rnn.rnn import LRRNN
 import torch.nn as nn
 import torch
 import numpy as np
-
+from initialize_parameterize import full_cov_embed, chol_cov_embed
 
 class VAE(nn.Module):
     """
@@ -104,10 +104,10 @@ class VAE(nn.Module):
         alphas = []
 
         # project and clamp the variances
-        eff_var_prior = self.rnn.full_cov_embed(self.rnn.R_z)
-        eff_var_prior_t0 = self.rnn.full_cov_embed(self.rnn.R_z_t0)
-        eff_var_prior_chol = self.rnn.chol_cov_embed(self.rnn.R_z)
-        eff_var_prior_t0_chol = self.rnn.chol_cov_embed(self.rnn.R_z_t0)
+        eff_var_prior = full_cov_embed(self.rnn.R_z)
+        eff_var_prior_t0 = full_cov_embed(self.rnn.R_z_t0)
+        eff_var_prior_chol = chol_cov_embed(self.rnn.R_z)
+        eff_var_prior_t0_chol = chol_cov_embed(self.rnn.R_z_t0)
 
         eff_var_x = torch.clip(self.rnn.var_embed_x(self.rnn.R_x), 1e-8)
         eff_var_x_inv = 1.0 / torch.clip(self.rnn.var_embed_x(self.rnn.R_x), 1e-8)
@@ -137,7 +137,7 @@ class VAE(nn.Module):
 
         # Get the observation weights and bias
         if self.rnn.params["readout_from"] == "currents":
-            m = self.rnn.transition.m_transform(self.rnn.transition.m)
+            m = self.rnn.transition.m
             B = self.rnn.observation.cast_B(self.rnn.observation.B).T @ m
             B = B.T
         else:
@@ -145,7 +145,7 @@ class VAE(nn.Module):
         Obs_bias = self.rnn.observation.Bias.squeeze(-1)
 
         # Calculate the Kalman gain and interpolation alpha
-        if dim_x < dim_z:
+        if dim_x < dim_z*4:
             Kalman_gain = (
                 eff_var_prior_t0
                 @ B
@@ -220,7 +220,7 @@ class VAE(nn.Module):
         u = u.unsqueeze(-1)  # account for k
 
         # precalculate Kalman Gain / Interpolation
-        if dim_x < dim_z:
+        if dim_x < dim_z*4:
             Kalman_gain = (
                 eff_var_prior
                 @ B
@@ -463,6 +463,7 @@ class VAE(nn.Module):
         else:
             v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)
         # Calculate the initial posterior mean and covariance
+        
         precZ = 1 / eff_var_prior_t0
         precE = 1 / Evar[:, :, 0]
         precQ = precZ + precE
@@ -1162,6 +1163,27 @@ def backwards_compat(vae_params):
         vae_params["rnn_architecture"] = vae_params.pop("prior_architecture")
     if vae_params["rnn_architecture"] == "PLRNN":
         vae_params["rnn_architecture"] = "LRRNN"
+
+    if vae_params["rnn_params"]["scalar_noise_x"] == "Cov":
+        vae_params["rnn_params"]["noise_x"] = "full"
+    elif vae_params["rnn_params"]["scalar_noise_x"] == False:
+        vae_params["rnn_params"]["noise_x"] = "diag"
+    else:
+        vae_params["rnn_params"]["noise_x"] = "scalar"
+    
+    if vae_params["rnn_params"]["scalar_noise_z"] == "Cov":
+        vae_params["rnn_params"]["noise_z"] = "full"
+    elif vae_params["rnn_params"]["scalar_noise_z"] == False:
+        vae_params["rnn_params"]["noise_z"] = "diag"
+    else:
+        vae_params["rnn_params"]["noise_z"] = "scalar"
+    
+    if vae_params["rnn_params"]["scalar_noise_z_t0"] == "Cov":
+        vae_params["rnn_params"]["noise_z_t0"] = "full"
+    elif vae_params["rnn_params"]["scalar_noise_z_t0"] == False:
+        vae_params["rnn_params"]["noise_z_t0"] = "diag"
+    else:
+        vae_params["rnn_params"]["noise_z_t0"] = "scalar"
 
 
 def resample_Q(Qz, indices):

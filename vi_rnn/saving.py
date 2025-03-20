@@ -152,5 +152,3 @@ class CPU_Unpickler(pickle.Unpickler):
             return lambda b: torch.load(io.BytesIO(b), map_location="cpu")
         else:
             return super().find_class(module, name)
-
-
