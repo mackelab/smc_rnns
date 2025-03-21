@@ -3,10 +3,10 @@ import torch
 import numpy as np
 import h5py
 from pathlib import Path
-
+#TODO: add inputs to every dataset class
 
 class Basic_dataset(Dataset):
-    def __init__(self, task_params, data, data_eval=None):
+    def __init__(self, task_params, data, data_eval=None, stim = None):
         """
         Basic dataset class for time series data that returns a random trial of length self.dur
         Args:
@@ -22,6 +22,11 @@ class Basic_dataset(Dataset):
             self.data_eval = self.data
         self.dur = task_params["dur"]
         self.n_trials = task_params["n_trials"]
+        
+        if stim is not None:
+            self.stim = torch.from_numpy(stim)
+        else:
+            self.stim = torch.zeros(self.n_trials,0,self.dur)
 
     def __len__(self):
         """Return number of trials in an epoch"""
@@ -42,6 +47,44 @@ class Basic_dataset(Dataset):
             0, self.dur, device=self.data.device
         )
     
+class Basic_dataset_with_trials(Dataset):
+    def __init__(self, task_params, data, data_eval=None, stim = None):
+        """
+        Basic dataset class for time series data that returns a random trial of length self.dur
+        Args:
+            task_params (dict): dictionary of task parameters
+            data (np.ndarray; n_trials x dim_x x T): time series data
+            data_eval (np.ndarray; n_trials x dim_x x T): optional evaluation data
+            inputs (np.ndarray; n_trials x dim_u x T): optional input
+        """
+        self.task_params = task_params
+        self.data = torch.from_numpy(data)
+        if data_eval is not None:
+            self.data_eval = torch.from_numpy(data_eval)
+        else:
+            self.data_eval = self.data
+        
+        self.n_trials = self.data.shape[1]
+
+        if stim is not None:
+            self.stim = torch.from_numpy(stim)
+        else:
+            self.stim = torch.zeros(self.n_trials,0,self.data.shape[2])
+
+    def __len__(self):
+        """Return number of trials in an epoch"""
+        return self.n_trials
+
+    def __getitem__(self, idx):
+        """
+        Return a trial of length self.dur
+        Args:
+            idx (int): trial index, arbitrary as trials are sampled randomly
+        Returns:
+            trial (torch.tensor; dim_x x self.dur): trial of length self.dur
+            input (torch.tensor; n_inp x self.dur): optional input on which the model is conditioned
+        """
+        return self.data[idx], self.stim[idx]
 
 class Oscillations_Cont(Dataset):
     def __init__(self, task_params, U, V, B, decay=0.9):

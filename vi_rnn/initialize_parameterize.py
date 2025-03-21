@@ -4,8 +4,6 @@ import numpy as np
 
 
 
-
-
 def chol_cov_embed(x):
     """
     Positive semi-definite embedding of a vector as a lower triangular matrix
@@ -72,34 +70,10 @@ def init_noise(noise_type, dim, init_scale, train_noise):
         )
         std_embed = lambda log_var: torch.exp(log_var / 2).expand(dim)
         var_embed = lambda log_var: torch.exp(log_var).expand(dim)
+    else:
+        print("invalid noise type, use full, diag, or scalar")
     return R, std_embed, var_embed
 
-
-
-
-        
-def init_AW(dz):
-    """Talathi & Vartak 2016: Improving Performance of Recurrent Neural Network with ReLU Nonlinearity
-    code  adapted from https://github.com/DurstewitzLab/dendPLRNN"""
-    matrix_random = torch.randn(dz, dz)
-    matrix_positive_normal = (1 / (dz)) * matrix_random.T @ matrix_random
-    matrix = torch.eye(dz) + matrix_positive_normal
-    max_ev = torch.max(abs(torch.linalg.eigvals(matrix)))
-    matrix_spectral_norm_one = matrix / max_ev
-    A = matrix_spectral_norm_one[range(dz), range(dz)]
-    return nn.Parameter(A, requires_grad=True)
-
-
-def init_AW_exp_par(dz):
-    """exp param of Talathi & Vartak 2016: Improving Performance of Recurrent Neural Network with ReLU Nonlinearity
-    code apapted from: https://github.com/DurstewitzLab/dendPLRNN"""
-    matrix_random = torch.randn(dz, dz)
-    matrix_positive_normal = 1 / (dz * dz) * matrix_random @ matrix_random.T
-    matrix = torch.eye(dz) + matrix_positive_normal
-    max_ev = torch.max(abs(torch.linalg.eigvals(matrix)))
-    matrix_spectral_norm_one = matrix / max_ev
-    A = torch.log(-torch.log(matrix_spectral_norm_one[range(dz), range(dz)]))
-    return nn.Parameter(A, requires_grad=True)
 
 
 def initialize_Ws_uniform(dz, N):

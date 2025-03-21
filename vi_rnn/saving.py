@@ -103,6 +103,8 @@ def load_model(name, load_encoder=True):
         )
     if vae_params["rnn_params"]["readout_from"] == True:
         vae_params["rnn_params"]["readout_from"] = "rates"
+    else:
+        vae_params["rnn_params"]["readout_from"] = "z"
 
     if (
         vae_params["rnn_params"]["activation"] == "relu"
@@ -119,13 +121,16 @@ def load_model(name, load_encoder=True):
         else:
             print("no out nonlinearity found, setting to identity")
             vae_params["rnn_params"]["out_nonlinearity"] = "identity"
-
+    if "shared_tau" in vae_params['rnn_params']:
+        vae_params['rnn_params']['decay']= vae_params['rnn_params'].pop("shared_tau")
+    
     model = VAE(vae_params)
 
     # More backwards compatibility
     d = torch.load(state_dict_file_rnn, map_location=torch.device("cpu"))
     for key in list(d.keys()):
         d[key.replace("latent_step", "transition")] = d.pop(key)
+        d[key.replace("transition.AW", "transition.decay")] = d.pop(key)
     for key in list(d.keys()):
         if key not in model.rnn.state_dict().keys():
             del d[key]

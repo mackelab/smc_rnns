@@ -12,7 +12,7 @@ class Inverse_Observation(nn.Module):
     Invert the (linear) observation model to obtain e(z|x)
     """
 
-    def __init__(self, dim_x, dim_z, params, inv_obs):
+    def __init__(self, dim_x, dim_z, params, inv_obs,scale=1e-5):
         """
         Args:
             dim_x (int): dimensionality of the data
@@ -26,13 +26,10 @@ class Inverse_Observation(nn.Module):
         self.dim_z = dim_z
         self.params = params
 
-        # initialise a distribution from which we can sample
-        self.normal = torch.distributions.Normal(0, 1)
         self.logvar = nn.Parameter(
-            2 * torch.log(torch.ones(self.dim_z) * params["init_scale"])
+            2 * torch.log(torch.ones(self.dim_z) * scale)
         )
 
-        # how much of the input data (in time steps) gets cut off in the forward pass
         self.mean = inv_obs
 
     def forward(self, x, k=1):
@@ -49,7 +46,7 @@ class Inverse_Observation(nn.Module):
         """
 
         mean = (
-            self.mean(x, grad=self.params["obs_grad"]).unsqueeze(-1).repeat(1, 1, 1, k)
+            self.mean(x).unsqueeze(-1).repeat(1, 1, 1, k)
         )
         logvar = (
             self.logvar.unsqueeze(0)
@@ -57,9 +54,8 @@ class Inverse_Observation(nn.Module):
             .unsqueeze(-1)
             .repeat(1, 1, mean.shape[2], k)
         )
-        eps_sample = self.normal.sample(mean.shape)
-        z = mean + torch.exp(logvar / 2) * eps_sample
-        return z, mean, logvar, eps_sample
+
+        return mean, logvar
 
 
 class CNN_encoder(nn.Module):
@@ -171,8 +167,6 @@ class CNN_encoder(nn.Module):
                 )  # = torch.zeros_like(self.logstd.bias)
             self.logvar = self.logvar_conv.bias
 
-        # initialise a distribution from which we can sample
-        self.normal = torch.distributions.Normal(0, 1)
 
     def forward(self, x, k=1):
         """
@@ -198,6 +192,4 @@ class CNN_encoder(nn.Module):
             )
         else:
             logvar = self.logvar_conv(init).unsqueeze(-1).repeat(1, 1, 1, k)
-        eps_sample = self.normal.sample(mean.shape)
-        z = mean + torch.exp(logvar / 2) * eps_sample
-        return z, mean, logvar, eps_sample
+        return mean, logvar

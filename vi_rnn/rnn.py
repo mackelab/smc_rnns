@@ -51,9 +51,6 @@ class LRRNN(nn.Module):
              
         # initialise the transition step
         # ---------
-        if "clipped" in params.keys():
-            if params["clipped"] and params["activation"] == "relu":
-                params["activation"] = "clipped_relu"
 
         if "full_rank" in params.keys() and params["full_rank"] == True:
             print("using full rank transitions")
@@ -61,10 +58,8 @@ class LRRNN(nn.Module):
                 self.d_z,
                 self.d_u,
                 nonlinearity=params["activation"],
-                exp_par=params["exp_par"],
-                shared_tau=params["shared_tau"],
+                decay=params["decay"],
                 g=params["g"],
-                train_latent_bias=params["train_latent_bias"],
                 train_neuron_bias=params["train_neuron_bias"],
             )
         else:
@@ -73,12 +68,11 @@ class LRRNN(nn.Module):
                 self.d_u,
                 self.d_N,
                 nonlinearity=params["activation"],
-                exp_par=params["exp_par"],
-                shared_tau=params["shared_tau"],
+                decay=params["decay"],
                 weight_dist=params["weight_dist"],
-                train_latent_bias=params["train_latent_bias"],
                 train_neuron_bias=params["train_neuron_bias"],
             )
+        
 
         # initialise the observation step
         # ---------
@@ -91,9 +85,11 @@ class LRRNN(nn.Module):
             out_dim = self.d_N  # readout from N-dim neuron activity
         elif self.readout_from == "z_and_v":
             out_dim = self.d_z + self.d_u  # readout from latents and inputs
-        else:
+        elif self.readout_from =="z":
             out_dim = self.d_z  # readout from latents
-
+        else:
+            raise ValueError("readout_from not recognised, use rates, currents, z_and_v, or z")
+        
         self.observation = Observation(
             out_dim,
             self.d_x,
@@ -257,7 +253,7 @@ class LRRNN(nn.Module):
         """
         if self.readout_from == "rates":
             R = self.get_rates(z, u=v)
-        elif self.readout_from == "currents":
+        elif self.readout_from == "currents" or self.readout_from == "x":
             m = self.transition.m
             if v is not None:
                 Wu = self.transition.Wu
@@ -390,10 +386,8 @@ class Transition(nn.Module):
         du,
         hidden_dim,
         nonlinearity,
-        exp_par,
-        shared_tau,
+        decay,
         weight_dist="uniform",
-        train_latent_bias=True,
         train_neuron_bias=True,
     ):
         """
@@ -401,8 +395,7 @@ class Transition(nn.Module):
             dz (int): dimensionality of the latent space
             hidden_dim (int): amount of neurons in the network
             nonlinearity (str): nonlinearity of the hidden layer
-            exp_par (bool): whether to use the exponential parameterisation for time constants
-            shared_tau (bool): whether to have one shared time constant across the latent dimensions
+            tau (float): decay constant
             weight_dist (str): weight distribution
             train_latent_bias (bool): whether to train the bias of the latents (z)
             train_neuron_bias (bool): whether to train the bias of the neurons (x)
@@ -432,23 +425,12 @@ class Transition(nn.Module):
             self.dnonlinearity = lambda x: torch.ones_like(x)
 
         # time constants
-        if shared_tau:
-            if exp_par:
-                self.AW = nn.Parameter(
-                    torch.log(-torch.log(torch.ones(1, 1, 1, 1) * shared_tau))
-                )
-                self.cast_A = lambda x: torch.exp(-torch.exp(x))
-            else:
-                self.AW = nn.Parameter(torch.ones(1, 1, 1, 1) * shared_tau)
-                self.cast_A = lambda x: x
-        else:
-            if exp_par:
-                self.AW = init_AW_exp_par(self.dz)
-                self.cast_A = exp_par_F
-            else:
-                self.AW = init_AW(self.dz)
-                self.cast_A = lambda x: x.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+        self.decay = nn.Parameter(
+            torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay))
+        )
+        self.cast_decay = lambda x: torch.exp(-torch.exp(x))
 
+      
         # bias of the neurons
         if nonlinearity == "clipped_relu":
             self.h = nn.Parameter(
@@ -458,9 +440,6 @@ class Transition(nn.Module):
             self.h = nn.Parameter(
                 torch.zeros(hidden_dim), requires_grad=train_neuron_bias
             )
-
-        # bias of the latents
-        self.hz = nn.Parameter(torch.zeros(dz), requires_grad=train_latent_bias)
 
         # weights (left and right singular vectors)
         if weight_dist == "uniform":
@@ -489,12 +468,11 @@ class Transition(nn.Module):
         Returns:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         """
-        A = self.cast_A(self.AW)
+        A = self.cast_decay(self.decay)
         R = self.get_rates(z, v=v)
         z = (
             A * z
             + torch.einsum("zN,BNTK->BzTK", self.n, R)
-            + self.hz.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         )
         return z
 
@@ -507,7 +485,7 @@ class Transition(nn.Module):
         Returns:
             v (torch.tensor; n_trials x dim_u x time_steps x k): input filtered by RNN dynamics
         """
-        A = self.cast_A(self.AW)
+        A = self.cast_decay(self.decay)
         v = A * v + (1 - A) * u
         return v
 
@@ -534,10 +512,8 @@ class Transition_FullRank(nn.Module):
         dz,
         du,
         nonlinearity,
-        exp_par,
-        shared_tau,
+        decay,
         g=np.sqrt(2),
-        train_latent_bias=True,
         train_neuron_bias=True,
     ):
         """
@@ -545,12 +521,8 @@ class Transition_FullRank(nn.Module):
             dz (int): dimensionality of the latent space
             hidden_dim (int): amount of neurons in the network
             nonlinearity (str): nonlinearity of the hidden layer
-            exp_par (bool): whether to use the exponential parameterisation for time constants
-            shared_tau (bool): whether to have one shared time constant across the latent dimensions
-            weight_dist (str): weight distribution
-            shared_tau (float): related to time constant tau as (1-dt/tau)
+            decay (float): related to time constant tau as (1-dt/tau)
             g (float): scale/gain of the recurrent weights
-            train_latent_bias (bool): whether to train the bias of the latents (z)
             train_neuron_bias (bool): whether to train the bias of the neurons (x)
         """
         super(Transition_FullRank, self).__init__()
@@ -578,31 +550,17 @@ class Transition_FullRank(nn.Module):
             self.dnonlinearity = lambda x: torch.ones_like(x)
 
         # time constants
-        if shared_tau:
-            if exp_par:
-                self.AW = nn.Parameter(
-                    torch.log(-torch.log(torch.ones(1, 1, 1, 1) * shared_tau))
-                )
-                self.cast_A = lambda x: torch.exp(-torch.exp(x))
-            else:
-                self.AW = nn.Parameter(torch.ones(1, 1, 1, 1) * shared_tau)
-                self.cast_A = lambda x: x
-        else:
-            if exp_par:
-                self.AW = init_AW_exp_par(self.dz)
-                self.cast_A = exp_par_F
-            else:
-                self.AW = init_AW(self.dz)
-                self.cast_A = lambda x: x.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+        self.decay= nn.Parameter(
+            torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay))
+        )
+        self.cast_decay = lambda x: torch.exp(-torch.exp(x))
+    
 
         # bias of the neurons
         if nonlinearity == "clipped_relu":
             self.h = nn.Parameter(uniform_init1d(dz), requires_grad=train_neuron_bias)
         else:
             self.h = nn.Parameter(torch.zeros(dz), requires_grad=train_neuron_bias)
-
-        # bias of the latents
-        self.hz = nn.Parameter(torch.zeros(dz), requires_grad=train_latent_bias)
 
         # weights (left and right singular vectors)
         self.W = nn.Parameter(torch.randn(dz, dz) * g / np.sqrt(dz), requires_grad=True)
@@ -622,7 +580,7 @@ class Transition_FullRank(nn.Module):
         Returns:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         """
-        A = self.cast_A(self.AW)
+        A = self.cast_decay(self.decay)
         z = (
             A * z
             + (1 - A)
@@ -633,7 +591,6 @@ class Transition_FullRank(nn.Module):
                     self.nonlinearity(z, self.h.unsqueeze(0).unsqueeze(2).unsqueeze(3)),
                 )
             )
-            + self.hz.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         )
 
         z += torch.einsum("Nu,BuTK->BNTK", self.Wu, v)

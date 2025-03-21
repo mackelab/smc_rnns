@@ -74,7 +74,7 @@ class VAE(nn.Module):
         self.max_var = 100
         self.MSE_loss = nn.MSELoss()
 
-    def forward_Optimal_VGTF(self, x, u=None, k=1, resample=False, sim_v=False):
+    def forward_optimal_proposal(self, x, u=None, k=1, resample=False, sim_v=False):
         """
         Forward pass of the VAE
         Note, here the approximate posterior is the optimal linear combination of the encoder and the RNN
@@ -355,7 +355,7 @@ class VAE(nn.Module):
             alphas,
         )
 
-    def forward_VGTF(
+    def forward(
         self,
         x,
         u=None,
@@ -405,7 +405,7 @@ class VAE(nn.Module):
             print("WARNING: likelihood does not exist, use one of: Gauss, Poisson")
 
         # Run the encoder
-        Esample, Emean, log_Evar, _ = self.encoder(
+        Emean, log_Evar = self.encoder(
             x[:, : self.dim_x, : x.shape[2] - t_forward], k=k
         )  # Bs,Dx,T,K
 
@@ -442,7 +442,7 @@ class VAE(nn.Module):
         x_hat = x.unsqueeze(-1)
 
         # Initialise some lists
-        bs, dim_z, time_steps, _ = Esample.shape
+        bs, dim_z, time_steps, _ = Emean.shape
         log_ws = []
         log_ll = []
         ll_xs = []
@@ -634,7 +634,7 @@ class VAE(nn.Module):
 
         return Loss, Qzs, Esample, log_xs, log_pzs, -log_qzs, log_likelihood, alphas
 
-    def forward_bootstrap_VGTF(
+    def forward_bootstrap_proposal(
         self,
         x,
         u=None,
@@ -831,15 +831,23 @@ class VAE(nn.Module):
 
     def to_device(self, device):
         """Move network between cpu / gpu (cuda)"""
-        if self.has_encoder:
-            self.encoder.to(device=device)
-            self.encoder.normal.loc = self.encoder.normal.loc.to(device=device)
-            self.encoder.normal.scale = self.encoder.normal.scale.to(device=device)
         self.rnn.to(device=device)
         self.rnn.normal.loc = self.rnn.normal.loc.to(device=device)
         self.rnn.normal.scale = self.rnn.normal.scale.to(device=device)
         self.rnn.observation.mask = self.rnn.observation.mask.to(device=device)
         self.rnn.transition.Wu = self.rnn.transition.Wu.to(device=device)
+
+    def posterior(
+        self,
+        x,
+        u=None,
+        k=1,
+        t_held_in=0,
+        t_forward=0,
+        resample="systematic",
+        marginal_smoothing=False,
+    ):
+        return self.predict_NLB(x,u,k,t_held_in,t_forward,resample,marginal_smoothing)
 
     def predict_NLB(
         self,
@@ -879,7 +887,7 @@ class VAE(nn.Module):
         )
 
         # Run the encoder
-        Esample, Emean, log_Evar, eps_sample = self.encoder(
+        Emean, log_Evar = self.encoder(
             x[:, : self.dim_x], k=k
         )  # Bs,Dx,T,K
         x_hat = x.unsqueeze(-1)
@@ -1130,6 +1138,7 @@ class VAE(nn.Module):
 
 
 def backwards_compat(vae_params):
+    #TODO: move to loading function
     if "prior_params" in vae_params:
         vae_params["rnn_params"] = vae_params.pop("prior_params")
     if "readout_rates" in vae_params["rnn_params"]:
@@ -1164,26 +1173,29 @@ def backwards_compat(vae_params):
     if vae_params["rnn_architecture"] == "PLRNN":
         vae_params["rnn_architecture"] = "LRRNN"
 
-    if vae_params["rnn_params"]["scalar_noise_x"] == "Cov":
-        vae_params["rnn_params"]["noise_x"] = "full"
-    elif vae_params["rnn_params"]["scalar_noise_x"] == False:
-        vae_params["rnn_params"]["noise_x"] = "diag"
-    else:
-        vae_params["rnn_params"]["noise_x"] = "scalar"
+    if "scalar_noise_x" in vae_params["rnn_params"]:
+        if vae_params["rnn_params"]["scalar_noise_x"] == "Cov":
+            vae_params["rnn_params"]["noise_x"] = "full"
+        elif vae_params["rnn_params"]["scalar_noise_x"] == False:
+            vae_params["rnn_params"]["noise_x"] = "diag"
+        else:
+            vae_params["rnn_params"]["noise_x"] = "scalar"
     
-    if vae_params["rnn_params"]["scalar_noise_z"] == "Cov":
-        vae_params["rnn_params"]["noise_z"] = "full"
-    elif vae_params["rnn_params"]["scalar_noise_z"] == False:
-        vae_params["rnn_params"]["noise_z"] = "diag"
-    else:
-        vae_params["rnn_params"]["noise_z"] = "scalar"
-    
-    if vae_params["rnn_params"]["scalar_noise_z_t0"] == "Cov":
-        vae_params["rnn_params"]["noise_z_t0"] = "full"
-    elif vae_params["rnn_params"]["scalar_noise_z_t0"] == False:
-        vae_params["rnn_params"]["noise_z_t0"] = "diag"
-    else:
-        vae_params["rnn_params"]["noise_z_t0"] = "scalar"
+    if "scalar_noise_z" in vae_params["rnn_params"]:
+        if vae_params["rnn_params"]["scalar_noise_z"] == "Cov":
+            vae_params["rnn_params"]["noise_z"] = "full"
+        elif vae_params["rnn_params"]["scalar_noise_z"] == False:
+            vae_params["rnn_params"]["noise_z"] = "diag"
+        else:
+            vae_params["rnn_params"]["noise_z"] = "scalar"
+
+    if "scalar_noise_z_t0" in vae_params["rnn_params"]:
+        if vae_params["rnn_params"]["scalar_noise_z_t0"] == "Cov":
+            vae_params["rnn_params"]["noise_z_t0"] = "full"
+        elif vae_params["rnn_params"]["scalar_noise_z_t0"] == False:
+            vae_params["rnn_params"]["noise_z_t0"] = "diag"
+        else:
+            vae_params["rnn_params"]["noise_z_t0"] = "scalar"
 
 
 def resample_Q(Qz, indices):

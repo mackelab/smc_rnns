@@ -129,7 +129,7 @@ def train_VAE(
     for i in range(curr_epoch, training_params["n_epochs"]):
         with torch.no_grad():
             # DO EVALUATION
-            if i % training_params["eval_epochs"] == 0 and training_params["run_eval"]:
+            if training_params["run_eval"] and i % training_params["eval_epochs"] == 0:
                 vae.eval()
                 with torch.no_grad():
                     klx_bin, psH, mean_rate_error = eval_VAE(
@@ -196,7 +196,7 @@ def train_VAE(
             # forward pass
 
             # optimal proposal, can be used with linear Gaussian observations
-            if training_params["loss_f"] == "opt_VGTF":
+            if training_params["loss_f"] == "opt_smc" or "opt_VGTF":
                 (
                     Loss_it,
                     Z,
@@ -206,7 +206,7 @@ def train_VAE(
                     H,
                     log_likelihood,
                     alphas,
-                ) = vae.forward_Optimal_VGTF(
+                ) = vae.forward_optimal_proposal(
                     inputs,
                     u=stim,
                     k=training_params["k"],
@@ -215,8 +215,8 @@ def train_VAE(
                 )
 
             # else we learn a parameterised encoder network
-            elif training_params["loss_f"] == "VGTF":
-                Loss_it, Z, _, ll_x, ll_z, H, log_likelihood, alphas = vae.forward_VGTF(
+            elif training_params["loss_f"] == "smc" or "VGTF":
+                Loss_it, Z, _, ll_x, ll_z, H, log_likelihood, alphas = vae.forward(
                     inputs,
                     u=stim,
                     k=training_params["k"],
@@ -227,7 +227,7 @@ def train_VAE(
                 )
 
             # don't use an encoder, just sample from RNN (bootstrap proposal)
-            elif training_params["loss_f"] == "bs_VGTF":
+            elif training_params["loss_f"] == "bs_VGTF" or "bs_smc":
                 (
                     Loss_it,
                     Z,
@@ -237,7 +237,7 @@ def train_VAE(
                     H,
                     log_likelihood,
                     alphas,
-                ) = vae.forward_bootstrap_VGTF(
+                ) = vae.forward_bootstrap_proposal(
                     inputs,
                     u=stim,
                     k=training_params["k"],
