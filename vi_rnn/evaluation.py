@@ -189,15 +189,16 @@ def eval_VAE(
         # Evaluate on one long trajectory
         if len(task.data_eval.shape) == 2:
             data = task.data_eval
-            T, dim_x = data.shape
+            dim_x, T = data.shape
             if sim_latent_noise > 1e-8:  # take sample of encoder
-                z_hat, _, _, _ = vae.encoder(data[:trial_dur].T.unsqueeze(0))
+                z_hat, _, _, _ = vae.encoder(data[:,:trial_dur].unsqueeze(0))
             else:  # take mean prediction of encoder
-                _, z_hat, _, _ = vae.encoder(data[:trial_dur].T.unsqueeze(0))
-            z0 = z_hat[:, :, :1].squeeze()
+                _, z_hat, _, _ = vae.encoder(data[:,:trial_dur].unsqueeze(0))
+            z0 = z_hat[:, :, :1,0]
             Z = vae.rnn.get_latent_time_series(
                 time_steps=T, cut_off=cut_off, z0=z0, noise_scale=sim_latent_noise
             )
+            data = data.T
         # Evaluate on multiple short trajectories (trials)
         else:
             dim_x, max_trials, T_data_trial = task.data_eval.shape
