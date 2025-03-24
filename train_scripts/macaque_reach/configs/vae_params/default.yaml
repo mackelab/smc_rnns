@@ -4,7 +4,7 @@ defaults:
   - rnn_params: lrrnn
 
 dim_x: ${dataset.n_held_in}
-dim_z: 5
+dim_z: 32
 dim_u: ${dataset.u}
 dim_N: 512
 dim_x_hat: ${dataset.n}

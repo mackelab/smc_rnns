@@ -43,16 +43,16 @@ def eval_nlb(
         submission (dict): submission dictionary
 
     """
-    t_held_in = eval_dataset.data.shape[1]
-    n_held_in = eval_dataset.data.shape[2]
-    t_held_out = train_dataset.data.shape[1] - eval_dataset.data.shape[1]
+    t_held_in = eval_dataset.data.shape[2]
+    n_held_in = eval_dataset.data.shape[1]
+    t_held_out = train_dataset.data.shape[2] - eval_dataset.data.shape[2]
     name = config.dataset.name.replace("_input", "")
     name = name if config.dataset.bin_size == 5 else f"{name}_{config.dataset.bin_size}"
 
-    x_t = train_dataset.data.permute(0, 2, 1).to(device)
-    x_e = eval_dataset.data.permute(0, 2, 1).to(device)
-    u_t = train_dataset.stim.permute(0, 2, 1).to(device)
-    u_e = eval_dataset.stim.permute(0, 2, 1).to(device)
+    x_t = train_dataset.data.to(device)
+    x_e = eval_dataset.data.to(device)
+    u_t = train_dataset.stim.to(device)
+    u_e = eval_dataset.stim.to(device)
 
     eval_predictions = []
     training_predictions = []
@@ -187,10 +187,10 @@ def eval_velocity(
     name = name if config.dataset.bin_size == 5 else f"{name}_{config.dataset.bin_size}"
 
     n_train = int(len(train_dataset.data) * frac_train)
-    x_t = train_dataset.data.permute(0, 2, 1).to(device)
+    x_t = train_dataset.data.to(device)
     x_e = x_t[n_train:]
     x_t = x_t[:n_train]
-    u_t = train_dataset.stim.permute(0, 2, 1).to(device)
+    u_t = train_dataset.stim.to(device)
     u_e = u_t[n_train:]
     u_t = u_t[:n_train]
     t_held_in = x_t.shape[-1]

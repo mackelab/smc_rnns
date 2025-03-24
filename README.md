@@ -3,17 +3,22 @@ Code accompanying [Inferring stochastic low-rank recurrent neural networks from 
 
 Matthijs Pals, A Erdem Sağtekin, Felix Pei, Manuel Gloeckler and Jakob H Macke, 2024
 
-### Quick start:
+### Check out the tutorial 
+Create a conda environment:
 ```
 cd smc_rnns
 conda env create -f smc_rnn_env.yml
-activate smc_rnn_env
-python run train_scripts/eeg/run_eeg.py
 ```
+And open up:
+```
+tutorial/tutorial_continuous.ipynb
+```
+
+
 ### Finding fixed points
 We included code for finding fixed points (and cycles) in piecewise linear low-rank RNNs. The `fixed_points` folder contains scripts for both our 'semi'-analytic method, as well as a modified version of [SCYFI](https://github.com/DurstewitzLab/SCYFI) (Eisenmann et al. 2023, GNU General Public Licence), where the search-space can additionally be constrained to the sub-regions that can contain fixed points. 
 
-Example usage in :
+Example usage in:
 ```
 generate_figures/Fig_8_find_fixed_points.ipynb
 ```

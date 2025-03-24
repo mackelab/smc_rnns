@@ -3,28 +3,77 @@ import torch.nn as nn
 import numpy as np
 
 
-def init_AW(dz):
-    """Talathi & Vartak 2016: Improving Performance of Recurrent Neural Network with ReLU Nonlinearity
-    code  adapted from https://github.com/DurstewitzLab/dendPLRNN"""
-    matrix_random = torch.randn(dz, dz)
-    matrix_positive_normal = (1 / (dz)) * matrix_random.T @ matrix_random
-    matrix = torch.eye(dz) + matrix_positive_normal
-    max_ev = torch.max(abs(torch.linalg.eigvals(matrix)))
-    matrix_spectral_norm_one = matrix / max_ev
-    A = matrix_spectral_norm_one[range(dz), range(dz)]
-    return nn.Parameter(A, requires_grad=True)
+
+def chol_cov_embed(x):
+    """
+    Positive semi-definite embedding of a vector as a lower triangular matrix
+    """
+    chol_cov = torch.tril(x, diagonal=-1) + torch.diag_embed(
+    torch.exp(x[range(x.shape[0]), range(x.shape[0])] / 2))
+    return chol_cov
+
+def inverse_chol_cov_embed(x):
+    """
+    such that x = chol_cov_embed(inverse_chol_cov_embed(x))
+    for x a lower triangular matrix
+    """
+    return torch.diag_embed(torch.log(x[range(x.shape[0]), range(x.shape[0])]))*2 + torch.tril(x, diagonal=-1)
 
 
-def init_AW_exp_par(dz):
-    """exp param of Talathi & Vartak 2016: Improving Performance of Recurrent Neural Network with ReLU Nonlinearity
-    code apapted from: https://github.com/DurstewitzLab/dendPLRNN"""
-    matrix_random = torch.randn(dz, dz)
-    matrix_positive_normal = 1 / (dz * dz) * matrix_random @ matrix_random.T
-    matrix = torch.eye(dz) + matrix_positive_normal
-    max_ev = torch.max(abs(torch.linalg.eigvals(matrix)))
-    matrix_spectral_norm_one = matrix / max_ev
-    A = torch.log(-torch.log(matrix_spectral_norm_one[range(dz), range(dz)]))
-    return nn.Parameter(A, requires_grad=True)
+
+
+def full_cov_embed(x):
+    """
+    Return positive semi-definite matrix
+    """
+    
+    cov = chol_cov_embed(x) @ (
+    chol_cov_embed(x).T
+    )
+    return cov
+
+
+
+def init_noise(noise_type, dim, init_scale, train_noise):
+    """
+    Initialise noise matrices
+    Args:
+        noise_type (str): type of noise matrix to use (Full, Diag, Scalar)
+        dim (int): length/width of the noise matrix
+        init_scale (float): initial scale of the noise (standard deviation)
+        train_noise (bool): whether to train the noise matrix
+    Returns:
+        R (nn.Parameter): noise matrix
+        std_embed (function): function to embed the noise matrix as (diagonalised) standard deviation
+        var_embed (function): function to embed the noise matrix as covariance
+    """
+    if noise_type == "full":
+        R = nn.Parameter(
+        torch.eye(dim) * np.log(init_scale) * 2,
+        requires_grad=train_noise,
+        )
+        std_embed = lambda x: torch.sqrt(
+            torch.diagonal(full_cov_embed(x))
+        )
+        var_embed = lambda x: (full_cov_embed(x))
+    elif noise_type == "diag":
+        R = nn.Parameter(
+        torch.ones(dim) * np.log(init_scale) * 2,
+        requires_grad=train_noise,
+        )
+        std_embed = lambda log_var: torch.exp(log_var / 2)
+        var_embed = lambda log_var: torch.exp(log_var)
+    elif noise_type == "scalar":
+        R = nn.Parameter(
+        torch.ones(1) * np.log(init_scale) * 2,
+        requires_grad=train_noise,
+        )
+        std_embed = lambda log_var: torch.exp(log_var / 2).expand(dim)
+        var_embed = lambda log_var: torch.exp(log_var).expand(dim)
+    else:
+        print("invalid noise type, use full, diag, or scalar")
+    return R, std_embed, var_embed
+
 
 
 def initialize_Ws_uniform(dz, N):

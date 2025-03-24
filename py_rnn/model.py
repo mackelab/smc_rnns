@@ -399,7 +399,6 @@ def predict(
 
 
 class project_taus_exp:
-
     def __init__(self):
         pass
 

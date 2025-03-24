@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset
+from initialize_parameterize import chol_cov_embed, inverse_chol_cov_embed
 
 
 def np_relu(x):
@@ -80,9 +81,9 @@ def extract_phase_plane_vae(vae, xlims, ylims, n_points=30, h=10, inp=None):
         v: np.array (n_points x n_points), y-axis velocity field
         norm: np.array (n_points x n_points), norm of the velocity field"""
     prior = vae.rnn.transition
-    decay = prior.cast_A(prior.AW).detach().numpy().squeeze()
-    V = (prior.n * prior.scaling).detach().numpy()
-    U = prior.m_transform(prior.m).detach().numpy()
+    decay = prior.cast_decay(prior.decay).detach().numpy().squeeze()
+    V = prior.n.detach().numpy()
+    U = prior.m.detach().numpy()
     B = prior.h.detach().numpy()
     if inp is None:
         I = np.zeros(1)
@@ -141,19 +142,19 @@ def orthogonalise_network(vae):
         u, s, v = torch.linalg.svd(J)
         projection_matrix = u[:, : vae.dim_z].T @ m_or
 
-        if vae.rnn.params["scalar_noise_z"] == "Cov":
-            proj_chol = vae.rnn.chol_cov_embed(vae.rnn.R_z)
+        if vae.rnn.params["noise_z"] == "full":
+            proj_chol = chol_cov_embed(vae.rnn.R_z)
         else:
             proj_chol = torch.diag(vae.rnn.std_embed_z(vae.rnn.R_z))
 
         proj_chol = projection_matrix @ proj_chol
+
         m_new = u[:, : vae.dim_z]
         n_new = (v[: vae.dim_z].T * s[: vae.dim_z]).T
         vae.rnn.transition.m.copy_(m_new)
         vae.rnn.transition.n.copy_(n_new)
-        vae.rnn.chol_cov_embed = lambda x: torch.tril(x)
-        vae.rnn.R_z = torch.nn.Parameter(torch.linalg.cholesky(proj_chol @ proj_chol.T))
-        vae.rnn.params["scalar_noise_z"] = "Cov"
+        vae.rnn.R_z = torch.nn.Parameter(inverse_chol_cov_embed(torch.linalg.cholesky(proj_chol @ proj_chol.T)))
+        vae.rnn.params["noise_z"] = "full"
     return vae
 
 
@@ -198,16 +199,16 @@ def rotate_basis_vectors(vae, rotation):
         n_or = vae.rnn.transition.n
         m_new = m_or @ np.linalg.inv(rotation)
         n_new = rotation @ n_or
-        if vae.rnn.params["scalar_noise_z"] == "Cov":
-            proj_chol = vae.rnn.chol_cov_embed(vae.rnn.R_z)
+        if vae.rnn.params["noise_z"] == "full":
+            proj_chol = chol_cov_embed(vae.rnn.R_z)
         else:
             proj_chol = torch.diag(vae.rnn.std_embed_z(vae.rnn.R_z))
         proj_chol = rotation @ proj_chol
         vae.rnn.transition.m.copy_(m_new)
         vae.rnn.transition.n.copy_(n_new)
-        vae.rnn.chol_cov_embed = lambda x: torch.tril(x)
-        vae.rnn.R_z = torch.nn.Parameter(torch.linalg.cholesky(proj_chol @ proj_chol.T))
-        vae.rnn.params["scalar_noise_z"] = "Cov"
+        chol_cov_embed = lambda x: torch.tril(x)
+        vae.rnn.R_z = torch.nn.Parameter(inverse_chol_cov_embed(torch.linalg.cholesky(proj_chol @ proj_chol.T)))
+        vae.rnn.params["noise_z"] = "full"
     return vae
 
 
@@ -225,9 +226,9 @@ def get_loadings(vae):
 
     """
     prior = vae.rnn.transition
-    tau = prior.cast_A(prior.AW).detach().numpy().squeeze()
-    pV = (prior.n * prior.scaling).detach().numpy()
-    pU = prior.m_transform(prior.m).detach().numpy()
+    tau = prior.cast_decay(prior.decay).detach().numpy().squeeze()
+    pV = prior.n.detach().numpy()
+    pU = prior.m.detach().numpy()
     pB = prior.h.detach().numpy()
     pI = prior.Wu.detach().numpy()
     return tau, pV, pU, pB, pI

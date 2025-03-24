@@ -10,17 +10,20 @@ import scipy.ndimage as ndimage
 import scipy.signal as signal
 import numpy as np
 from scipy.stats import zscore
+from vi_rnn.predict import predict
 
 
-def eval_VAE(
+def eval_kl_pse(
     vae,
     task,
-    smoothing=20,
     cut_off=0,
+    init_state_eval="posterior_sample",
+    smoothing=20,
     freq_cut_off=10000,
-    sim_obs_noise=1,
-    sim_latent_noise=1,
     smooth_at_eval=True,
+    optimal_proposal=True,
+    observation_model="Gauss",
+    sim_v=False
 ):
     """
     Evaluate the VAE by looking at distribution over states and time
@@ -41,52 +44,20 @@ def eval_VAE(
         mean_rate_error (float): mean rate error between the true and generated data
 
     """
-    trial_data, _ = task.__getitem__(0)
-    trial_dur = trial_data.shape[1]
     with torch.no_grad():
 
-        # Evaluate on one long trajectory
+        data = task.data_eval
+        u = task.stim_eval
         if len(task.data_eval.shape) == 2:
-            data = task.data_eval
-            T, dim_x = data.shape
-            if sim_latent_noise > 1e-8:  # take sample of encoder
-                z_hat, _, _, _ = vae.encoder(data[:trial_dur].T.unsqueeze(0))
-            else:  # take mean prediction of encoder
-                _, z_hat, _, _ = vae.encoder(data[:trial_dur].T.unsqueeze(0))
-            z0 = z_hat[:, :, :1].squeeze()
-            Z = vae.rnn.get_latent_time_series(
-                time_steps=T, cut_off=cut_off, z0=z0, noise_scale=sim_latent_noise
-            )
-        # Evaluate on multiple short trajectories (trials)
-        else:
-            dim_x, max_trials, T_data_trial = task.data_eval.shape
-            n_trials = int(10000 / T_data_trial)
-            n_eval_trials = min(n_trials, max_trials)
-            data = task.data_eval[
-                :, :n_eval_trials, :
-            ]  # dim_x, n_eval_trials, T_data_trial
-            if sim_latent_noise > 1e-8:
-                z_hat, _, _, _ = vae.encoder(data.permute(1, 0, 2))
-            else:
-                _, z_hat, _, _ = vae.encoder(data.permute(1, 0, 2))
+            data = data.unsqueeze(0)
+            u = u.unsqueeze(0)
+        dur = min(data.shape[2],10000)
 
-            z0 = z_hat[:, :, :1]
-            Z = vae.rnn.get_latent_time_series(
-                time_steps=T_data_trial,
-                cut_off=cut_off,
-                z0=z0,
-                noise_scale=sim_latent_noise,
-            )
-
-            data = data.reshape(dim_x, -1).T  # n_eval_trials*T_data_trial, dim_x
-            T, dim_x = data.shape
-
-        data_gen = (
-            vae.rnn.get_observation(Z, noise_scale=sim_obs_noise)
-            .permute(0, 2, 1, 3)
-            .reshape(T, dim_x)
-        )
-
+        _, data_gen, _ =predict(vae,u=u,x=data,dur=dur,initial_state=init_state_eval, 
+                                observation_model=observation_model,optimal_proposal=optimal_proposal,
+                                cut_off=cut_off, verbose=True, sim_v=sim_v)         
+        data = data.permute(0, 2, 1).reshape(-1, vae.dim_x)
+        data_gen =torch.from_numpy(data_gen).permute(0, 2, 1).reshape(-1, vae.dim_x)
         # potentially smooth
         if smooth_at_eval:
             window = signal.windows.hann(15)
@@ -108,7 +79,7 @@ def eval_VAE(
         print(
             f"KL_x = {klx_bin.item():.3f}, PS_dist = {psH:.3f}, Mean_rate_error = {mean_rate_error:.3f}"
         )
-        return klx_bin.item(), psH, mean_rate_error
+    return klx_bin.item(), psH, mean_rate_error
 
 
 def mean_rate(data_gen, data_real):
@@ -119,3 +90,4 @@ def mean_rate(data_gen, data_real):
         np.mean((data_mean_rates - data_gen_mean_rates) ** 2) / data_gen.shape[1]
     )
     return mean_rate_error
+
