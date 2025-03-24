@@ -6,7 +6,7 @@ from pathlib import Path
 #TODO: add inputs to every dataset class
 
 class Basic_dataset(Dataset):
-    def __init__(self, task_params, data, data_eval=None, stim = None):
+    def __init__(self, task_params, data, data_eval=None, stim = None, stim_eval = None):
         """
         Basic dataset class for time series data that returns a random trial of length self.dur
         Args:
@@ -26,8 +26,11 @@ class Basic_dataset(Dataset):
         if stim is not None:
             self.stim = torch.from_numpy(stim)
         else:
-            self.stim = torch.zeros(self.n_trials,0,self.dur)
-
+            self.stim = torch.zeros(0, self.data.shape[1])
+        if stim_eval is not None:
+            self.stim_eval = torch.from_numpy(stim_eval)
+        else:
+            self.stim_eval = self.stim
     def __len__(self):
         """Return number of trials in an epoch"""
         return self.n_trials
@@ -41,16 +44,14 @@ class Basic_dataset(Dataset):
             trial (torch.tensor; dim_x x self.dur): trial of length self.dur
             input (torch.tensor; n_inp x self.dur): optional input on which the model is conditioned
         """
-        t_start = torch.randint(low=0, high=self.data.shape[0] - self.dur, size=(1,))[0]
+        t_start = torch.randint(low=0, high=self.data.shape[1] - self.dur, size=(1,))[0]
         t_end = t_start + self.dur
-        return self.data[:,t_start:t_end], torch.zeros(
-            0, self.dur, device=self.data.device
-        )
+        return self.data[:,t_start:t_end], self.stim[:,t_start:t_end]
     
 class Basic_dataset_with_trials(Dataset):
-    def __init__(self, task_params, data, data_eval=None, stim = None):
+    def __init__(self, task_params, data, data_eval=None, stim = None, stim_eval = None):
         """
-        Basic dataset class for time series data that returns a random trial of length self.dur
+        Basic dataset class for time series data split into trials
         Args:
             task_params (dict): dictionary of task parameters
             data (np.ndarray; n_trials x dim_x x T): time series data
@@ -64,13 +65,16 @@ class Basic_dataset_with_trials(Dataset):
         else:
             self.data_eval = self.data
         
-        self.n_trials = self.data.shape[1]
+        self.n_trials = self.data.shape[0]
 
         if stim is not None:
             self.stim = torch.from_numpy(stim)
         else:
             self.stim = torch.zeros(self.n_trials,0,self.data.shape[2])
-
+        if stim_eval is not None:
+            self.stim_eval = torch.from_numpy(stim_eval)
+        else:
+            self.stim_eval = self.stim
     def __len__(self):
         """Return number of trials in an epoch"""
         return self.n_trials
@@ -139,6 +143,8 @@ class Oscillations_Cont(Dataset):
                 self.data[:, :, t] = (self.latents[:, :, t]@U.T)[:, :self.N]
         self.data += torch.randn(self.n_trials, self.N, self.dur) * self.R_x
         self.data_eval = self.data
+        self.stim = torch.zeros(self.data.shape[0],0,self.data.shape[2])
+        self.stim_eval = self.stim
 
     def __len__(self):
         """Return number of trials in an epoch"""
@@ -154,11 +160,8 @@ class Oscillations_Cont(Dataset):
             input (torch.tensor; self.dur x dim_u): optional input (here 0)
         """
 
-        return self.data[idx], torch.zeros(
-            self.data.shape[1],0, device=self.data.device
-        )
-
-
+        return self.data[idx], self.stim[idx]
+    
 class Oscillations_Poisson(Dataset):
     def __init__(self, task_params, U, V, B, decay=0.9):
         """
@@ -225,6 +228,8 @@ class Oscillations_Poisson(Dataset):
             self.rates = torch.nn.functional.softplus(self.rates)
         self.data = torch.poisson(self.rates)
         self.data_eval = self.data
+        self.stim = torch.zeros(self.data.shape[0],0,self.data.shape[2])
+        self.stim_eval = self.stim
 
     def __len__(self):
         """Return number of trials in an epoch"""
@@ -240,9 +245,7 @@ class Oscillations_Poisson(Dataset):
             input (torch.tensor; self.dur x dim_u): optional input (here 0)
         """
 
-        return self.data[idx], torch.zeros(
-            self.data.shape[1],0, device=self.data.device
-        )
+        return self.data[idx],self.stim[idx]
 
 
 class Reaching_Teacher(Dataset):
@@ -328,6 +331,7 @@ class Reaching_Teacher(Dataset):
                 self.data[:, :, t] =  self.latents[:, :, t]@U.T + self.v[:, :, t] @ I
         self.data += torch.randn(self.n_trials, self.N, self.dur) * self.R_x
         self.data_eval = self.data
+        self.stim_eval = self.stim
 
     def __len__(self):
         """Return number of trials in an epoch"""
@@ -342,8 +346,7 @@ class Reaching_Teacher(Dataset):
             trial (torch.tensor; dim_x x self.dur): trial of length self.dur
             stim (torch.tensor; n_inp x self.dur): stimulus
         """
-        stim = self.stim[idx].to(device=self.data.device)
-        return self.data[idx], stim
+        return self.data[idx], self.stim[idx]
 
 
 class Reaching(Dataset):
@@ -566,7 +569,7 @@ class RDM_Teacher(Dataset):
                 self.data[:, :, t] =  self.latents[:, :, t]@U.T + self.v[:, :, t] @ I
         self.data += torch.randn(self.n_trials, self.N, self.dur) * self.R_x
         self.data_eval = self.data
-
+        self.stim_eval = self.stim
     def __len__(self):
         """Return number of trials in an epoch"""
         return self.n_trials
@@ -580,8 +583,7 @@ class RDM_Teacher(Dataset):
             trial (torch.tensor; dim_x x self.dur): trial of length self.dur
             stim (torch.tensor; n_inp x self.dur): stimulus
         """
-        stim = self.stim[idx].to(device=self.data.device)
-        return self.data[idx], stim
+        return self.data[idx], self.stim[idx]
 
 class NLBDataset(Dataset):
     def __init__(self, data, params, inputs=None):
@@ -609,6 +611,7 @@ class NLBDataset(Dataset):
                 dtype=torch.float,
             )
         )
+        self.stim_eval = self.stim
 
     def __len__(self):
         return len(self.data)
@@ -715,15 +718,15 @@ def load_nlb_dataset(
                 eval_inputs = np.apply_along_axis(smoothing_func, 1, eval_inputs)
                 assert eval_inputs.shape[1] == orig_len
     return (
-        torch.tensor(train_data, dtype=torch.float),
-        torch.tensor(eval_data, dtype=torch.float),
+        torch.tensor(train_data, dtype=torch.float).permute(0,2,1),
+        torch.tensor(eval_data, dtype=torch.float).permute(0,2,1),
         (
-            torch.tensor(train_inputs, dtype=torch.float)
+            torch.tensor(train_inputs, dtype=torch.float).permute(0,2,1)
             if train_inputs is not None
             else train_inputs
         ),
         (
-            torch.tensor(eval_inputs, dtype=torch.float)
+            torch.tensor(eval_inputs, dtype=torch.float).permute(0,2,1)
             if eval_inputs is not None
             else eval_inputs
         ),

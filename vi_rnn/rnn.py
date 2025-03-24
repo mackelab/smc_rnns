@@ -253,7 +253,7 @@ class LRRNN(nn.Module):
         """
         if self.readout_from == "rates":
             R = self.get_rates(z, u=v)
-        elif self.readout_from == "currents" or self.readout_from == "x":
+        elif self.readout_from == "currents":
             m = self.transition.m
             if v is not None:
                 Wu = self.transition.Wu

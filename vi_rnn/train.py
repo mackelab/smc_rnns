@@ -7,7 +7,8 @@ import os
 
 os.environ["WANDB__SERVICE_WAIT"] = "1000"
 import sys
-from vi_rnn.evaluation import eval_VAE
+from evaluation.eval_kl_pse import eval_kl_pse
+from vi_rnn.predict import predict
 from vi_rnn.saving import save_model
 
 file_dir = str(os.path.dirname(os.path.abspath(__file__)))
@@ -90,7 +91,10 @@ def train_VAE(
     )
     dataloader.dataset.data = dataloader.dataset.data.to(device=device)
     dataloader.dataset.data_eval = dataloader.dataset.data_eval.to(device=device)
+    dataloader.dataset.stim = dataloader.dataset.stim.to(device=device)
+    dataloader.dataset.stim_eval = dataloader.dataset.stim_eval.to(device=device)
 
+  
     # initialize wandb
     if sync_wandb:
         wandb.init(
@@ -131,55 +135,63 @@ def train_VAE(
             # DO EVALUATION
             if training_params["run_eval"] and i % training_params["eval_epochs"] == 0:
                 vae.eval()
-                with torch.no_grad():
-                    klx_bin, psH, mean_rate_error = eval_VAE(
-                        vae,
-                        task,
-                        cut_off=0,
-                        smoothing=training_params["smoothing"],
-                        freq_cut_off=training_params["freq_cut_off"],
-                        sim_obs_noise=training_params["sim_obs_noise"],
-                        sim_latent_noise=training_params["sim_latent_noise"],
-                        smooth_at_eval=training_params["smooth_at_eval"],
+                if ((training_params["loss_f"] == "opt_smc") or 
+                    ("observation_likelihood" in training_params and 
+                     training_params["observation_likelihood"]=="Gauss")
+                ):
+                    observation_model="Gauss"
+                elif training_params["observation_likelihood"] == "Poisson":
+                    observation_model="Poisson"                                                                                 
+                if training_params["loss_f"] == "opt_smc":
+                    optimal_proposal = True
+                else:
+                    optimal_proposal = False
+                if "init_state_eval" in training_params:
+                    init_state_eval = training_params["init_state_eval"]
+                else:
+                    init_state_eval = "posterior_sample"
+                klx_bin, psH, mean_rate_error = eval_kl_pse(
+                    vae,
+                    task,
+                    cut_off=0,
+                    init_state_eval=init_state_eval,
+                    smoothing=training_params["smoothing"],
+                    freq_cut_off=training_params["freq_cut_off"],
+                    smooth_at_eval=training_params["smooth_at_eval"],
+                    optimal_proposal= optimal_proposal,
+                    observation_model=observation_model,
+                    sim_v = training_params["sim_v"] 
+                )
+                training_params["KL_x"].append(klx_bin)
+                training_params["PSH"].append(psH)
+                training_params["mean_error"].append(mean_rate_error)
+
+                if sync_wandb:
+                    wandb.log(
+                        {
+                            "KL_data": klx_bin,
+                            "power_spectr_distance": psH,
+                            "mean_rate_error": mean_rate_error,
+                        }
                     )
-                    training_params["KL_x"].append(klx_bin)
-                    training_params["PSH"].append(psH)
-                    training_params["mean_error"].append(mean_rate_error)
 
-                    if sync_wandb:
-                        wandb.log(
-                            {
-                                "KL_data": klx_bin,
-                                "power_spectr_distance": psH,
-                                "mean_rate_error": mean_rate_error,
-                            }
-                        )
-
-                        # plot latent time series and reconstructions
-                        with torch.no_grad():
-                            data, u = task.__getitem__(0)
-                            dim_x, _ = data.shape
-                            z_hat, Emean, Esigma, eps_s = vae.encoder(data.unsqueeze(0))
-                            z0 = z_hat[:, :, :1].squeeze()
-                            Z = vae.rnn.get_latent_time_series(
-                                time_steps=1000,
-                                z0=z0,
-                                noise_scale=training_params["sim_latent_noise"],
-                            )
-                            data_gen = (
-                                vae.rnn.get_observation(
-                                    Z, noise_scale=training_params["sim_obs_noise"]
-                                )
-                                .permute(0, 2, 1, 3)
-                                .reshape(1000, dim_x)
-                            )
-                        plt.figure()
-                        plt.plot(Z[0, :, :, 0].detach().cpu().T)
-                        plt.xlim(0)
-                        wandb.log({"latent" + str(i): plt})
-                        plt.figure()
-                        plt.plot(data_gen.detach().cpu())
-                        wandb.log({"reconstruction" + str(i): plt})
+                    # plot latent time series and reconstructions
+                    data = task.data_eval
+                    u = task.stim_eval
+                    if len(task.data_eval.shape) == 2:
+                        data = data.unsqueeze(0)
+                        u = u.unsqueeze(0)
+                    dur = min(data.shape[2],1000)
+                    Z, data_gen, _ =predict(vae,u=u,x=data,dur=dur,initial_state=init_state_eval, 
+                                            observation_model=observation_model,optimal_proposal=optimal_proposal,
+                                            cut_off=0, verbose=True, sim_v=training_params["sim_v"])               
+                    plt.figure()
+                    plt.plot(Z[0].T)
+                    plt.xlim(0)
+                    wandb.log({"latent" + str(i): plt})
+                    plt.figure()
+                    plt.plot(data_gen[0].T)
+                    wandb.log({"reconstruction" + str(i): plt})
 
         # set rnn to training mode
         vae.train()
@@ -196,11 +208,10 @@ def train_VAE(
             # forward pass
 
             # optimal proposal, can be used with linear Gaussian observations
-            if training_params["loss_f"] == "opt_smc" or "opt_VGTF":
+            if training_params["loss_f"] == "opt_smc":
                 (
                     Loss_it,
                     Z,
-                    _,
                     ll_x,
                     ll_z,
                     H,
@@ -215,8 +226,8 @@ def train_VAE(
                 )
 
             # else we learn a parameterised encoder network
-            elif training_params["loss_f"] == "smc" or "VGTF":
-                Loss_it, Z, _, ll_x, ll_z, H, log_likelihood, alphas = vae.forward(
+            elif training_params["loss_f"] == "smc":
+                Loss_it, Z, ll_x, ll_z, H, log_likelihood, alphas = vae.forward(
                     inputs,
                     u=stim,
                     k=training_params["k"],
@@ -227,11 +238,10 @@ def train_VAE(
                 )
 
             # don't use an encoder, just sample from RNN (bootstrap proposal)
-            elif training_params["loss_f"] == "bs_VGTF" or "bs_smc":
+            elif training_params["loss_f"] == "bs_smc":
                 (
                     Loss_it,
                     Z,
-                    _,
                     ll_x,
                     ll_z,
                     H,
@@ -247,14 +257,6 @@ def train_VAE(
                     sim_v=training_params["sim_v"],
                 )
 
-            # deterministic setting (generalised teacher forcing)
-            elif training_params["loss_f"] == "GTF":
-                Loss_it, Z, _, ll_x, ll_z, H, log_likelihood, alphas = vae.forward_GTF(
-                    inputs,
-                    u=stim,
-                    alpha=training_params["alpha"],
-                    sim_v=training_params["sim_v"],
-                )
 
             batch_ll += log_likelihood.mean().item()
             batch_ll_x += ll_x.mean().item()

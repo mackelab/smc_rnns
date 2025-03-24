@@ -22,7 +22,7 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
 
         # rename some dict keys for backwards compatibility
-        backwards_compat(vae_params)
+        # backwards_compat(vae_params)
 
         self.dim_x = vae_params["dim_x"]
         if "dim_x_hat" in vae_params:
@@ -347,7 +347,6 @@ class VAE(nn.Module):
         return (
             Loss,
             Qzs,
-            torch.zeros_like(Qzs),
             log_xs,
             log_pzs,
             -log_qzs,
@@ -632,7 +631,7 @@ class VAE(nn.Module):
         Qzs = torch.stack(Qzs)
         Qzs = Qzs.permute(1, 2, 0, 3)
 
-        return Loss, Qzs, Esample, log_xs, log_pzs, -log_qzs, log_likelihood, alphas
+        return Loss, Qzs, log_xs, log_pzs, -log_qzs, log_likelihood, alphas
 
     def forward_bootstrap_proposal(
         self,
@@ -710,6 +709,7 @@ class VAE(nn.Module):
 
         # Get the initial prior mean
         batch_size, dim_x, time_steps = x.shape
+
         prior_mean = (
             self.rnn.get_initial_state(u[:, :, 0])
             .unsqueeze(2)
@@ -795,39 +795,8 @@ class VAE(nn.Module):
         Qzs = torch.stack(Qzs)
         Qzs = Qzs.permute(1, 2, 0, 3)
         empty = torch.ones(0, device=Qzs.device)
-        return Loss, Qzs, empty, log_xs, empty, empty, log_likelihood, empty
+        return Loss, Qzs, log_xs, empty, empty, log_likelihood, empty
 
-    def forward_GTF(self, x, u, alpha, sim_v):
-        """Deterministic setting"""
-        with torch.no_grad():
-            z_hat = self.rnn.inv_observation(x).unsqueeze(-1)
-        # _, z_hat,_, _ = self.encoder(x,k=1) #Bs,Dx,T,K
-
-        batch_size, d_x, time_steps = x.shape
-        Fzs = []
-        Fz = z_hat[:, :, 0]
-        u = u.unsqueeze(-1)
-        v = torch.zeros(batch_size, self.dim_u, 1, 1, device=x.device)
-        for t in range(1, time_steps):
-            # print(Fz.shape)
-            Fz_out, v = self.rnn(
-                Fz.unsqueeze(-2),
-                u=u[:, :, t - 1].unsqueeze(-2),
-                v=v,
-                noise_scale=0,
-                sim_v=sim_v,
-            )
-            Fz_out = Fz_out.squeeze(-2)
-            Fz = (1 - alpha) * Fz_out + alpha * z_hat[:, :, t]
-            Fzs.append(Fz_out)
-        Fzs = torch.stack(Fzs)
-        Fzs = Fzs.permute(1, 2, 0, 3)
-        outputs = self.rnn.get_observation(Fzs, noise_scale=0)
-        distance_x = self.MSE_loss(x[:, :, 1:].unsqueeze(-1), outputs)
-        Loss = -distance_x
-        alpha = torch.ones(1, device=Loss.device) * alpha
-        empty = torch.ones(0, device=Loss.device)
-        return Loss, Fzs, empty, empty, empty, empty, empty, alpha
 
     def to_device(self, device):
         """Move network between cpu / gpu (cuda)"""
@@ -836,6 +805,7 @@ class VAE(nn.Module):
         self.rnn.normal.scale = self.rnn.normal.scale.to(device=device)
         self.rnn.observation.mask = self.rnn.observation.mask.to(device=device)
         self.rnn.transition.Wu = self.rnn.transition.Wu.to(device=device)
+        self.encoder.to(device=device)
 
     def posterior(
         self,
@@ -846,18 +816,20 @@ class VAE(nn.Module):
         t_forward=0,
         resample="systematic",
         marginal_smoothing=False,
+        sim_v=False,
     ):
-        return self.predict_NLB(x,u,k,t_held_in,t_forward,resample,marginal_smoothing)
+        return self.predict_NLB(x,u,k,t_held_in,t_forward,resample,marginal_smoothing,sim_v=sim_v)
 
     def predict_NLB(
         self,
         x,
         u=None,
         k=1,
-        t_held_in=0,
+        t_held_in=None,
         t_forward=0,
         resample="systematic",
         marginal_smoothing=False,
+        sim_v=False
     ):
         """
         Obtain filtering and smoothing posteriors given data and optionally input
@@ -878,6 +850,9 @@ class VAE(nn.Module):
             Xs_smooth (torch.tensor; n_trials x dim_x x time_steps x k): smoothed observation time series
         """
 
+        if t_held_in is None:
+            t_held_in = x.shape[2]
+
         # no need for gradients here
         self.eval()
 
@@ -888,7 +863,7 @@ class VAE(nn.Module):
 
         # Run the encoder
         Emean, log_Evar = self.encoder(
-            x[:, : self.dim_x], k=k
+            x[:, : self.dim_x, :t_held_in], k=k
         )  # Bs,Dx,T,K
         x_hat = x.unsqueeze(-1)
 
@@ -915,6 +890,7 @@ class VAE(nn.Module):
             min=np.sqrt(self.min_var),
             max=np.sqrt(self.max_var),
         )  # 1,Dz,1
+        bs, dim_z, time_steps, _ = Emean.shape
 
         # Initialise some lists
         log_ws = []
@@ -924,10 +900,14 @@ class VAE(nn.Module):
         # Get the prior mean and observation mean
         if u is None:
             u = torch.zeros(x.shape[0], self.dim_u, x.shape[2]).to(x.device)
-        prior_mean = self.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)
-
-        u = u.unsqueeze(-1)  # add particle dimension
-
+        # Get the initial prior mean
+        if sim_v:
+            prior_mean = self.rnn.get_initial_state(torch.zeros_like(u[:,:,0])).unsqueeze(2).expand(bs,self.dim_z,k)
+            v = torch.zeros(bs,self.dim_u,1,1,device = x.device)
+        else: #initialise in the affine subspace corresponding to the input
+            prior_mean = self.rnn.get_initial_state(u[:,:,0]).unsqueeze(2).expand(bs,self.dim_z,k) #BS,Dz,K
+            v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)  # add particle dimension       
+ 
         # get the posterior mean and covariance
         precZ = 1 / eff_var_prior_t0
         precE = 1 / Evar[:, :, 0]
@@ -949,17 +929,19 @@ class VAE(nn.Module):
         )
 
         # Get the observation mean and calculate likelihood of the data
-        mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0).squeeze(-2)
+        mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0, v=v).squeeze(-2)
         ll_x = ll_x_func(x_hat[:, :, 0], mean_x[:, : x_hat.shape[1]])
 
         # Calculate the log weights
         log_w = ll_x + ll_pz - ll_qz
+        vs=[v.squeeze(2)]
 
         # Append the log weights and log likelihoods
         log_ws.append(log_w)
         Qzs.append(Qz)
         t_bs = 0
-        # t_held_in-=t_bs
+        u = u.unsqueeze(-1)  # add particle dimension
+
         # Loop through the time steps
         for t in range(1, t_held_in):
 
@@ -980,9 +962,14 @@ class VAE(nn.Module):
 
             # Get the prior mean
             prior_mean = self.rnn.transition(
-                Qz.unsqueeze(-2), v=u[:, :, t].unsqueeze(2)
+                Qz.unsqueeze(-2), v=v
             )
             prior_mean = prior_mean.squeeze(-2)
+            if sim_v:
+                v = self.rnn.transition.step_input(v,u[:, :, t-1].unsqueeze(2))   
+            else:
+                v = u[:, :, t].unsqueeze(2)  
+            vs.append(v.squeeze(2))
 
             # Calculate the posterior mean and covariance
             precZ = 1 / eff_var_prior
@@ -1005,7 +992,7 @@ class VAE(nn.Module):
             )
 
             # Get the observation mean and calculate likelihood of the data
-            mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0).squeeze(
+            mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0,v=v).squeeze(
                 -2
             )
             ll_x = ll_x_func(x_hat[:, :, t], mean_x[:, : x_hat.shape[1]])
@@ -1033,17 +1020,20 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Here prior and posterior are the same and we just need the likelihood of the data
-            prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=None).squeeze(2)
-
+            prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=v).squeeze(2)
+            if sim_v:
+                v = self.rnn.transition.step_input(v,torch.zeros_like(v))  
+            vs.append(v.squeeze(2))
             # Sample from the posterior and calculate likelihood
             Q_dist = torch.distributions.Normal(
                 loc=prior_mean, scale=torch.sqrt(eff_var_prior)
             )
             Qz = Q_dist.rsample()
 
-            mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0).squeeze(
+            mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0,v=v).squeeze(
                 -2
             )
+
 
             ll_x = ll_x_func(x_hat[:, :, t], mean_x[:, : x_hat.shape[1]])
             log_w = ll_x
@@ -1080,7 +1070,7 @@ class VAE(nn.Module):
                 # Marginal smoothing, note this jas K^2 cost!
 
                 prior_mean = self.rnn(
-                    Qzs[t].unsqueeze(-2), noise_scale=0, u=u[:, :, t].unsqueeze(2)
+                    Qzs[t].unsqueeze(-2), noise_scale=0, u=vs[t-1].unsqueeze(2)
                 ).squeeze(-2)
                 probs_ij = (
                     torch.distributions.Normal(
@@ -1105,7 +1095,7 @@ class VAE(nn.Module):
             else:
                 # Conditional smoothing
                 prior_mean = self.rnn.transition(
-                    Qzs[t].unsqueeze(-2), v=u[:, :, t].unsqueeze(2)
+                    Qzs[t].unsqueeze(-2), v=vs[t-1].unsqueeze(-2)
                 ).squeeze(-2)
                 ll_pz = (
                     torch.distributions.Normal(loc=prior_mean, scale=eff_std_prior)
@@ -1118,9 +1108,14 @@ class VAE(nn.Module):
                 indices = sample_indices_systematic(log_weights_reweighted)
                 Qzs_sm[t] = resample_Q(Qzs[t], indices)
 
-        # Use Bootstrap samples for the last n_forward steps
+        # Use forward samples for the last n_forward steps
+
         for t in range(t_held_in, t_held_in + t_forward):
-            prior_mean = self.rnn.transition(Qz.unsqueeze(-2)).squeeze(-2)
+            prior_mean = self.rnn.transition(Qz.unsqueeze(-2), v = v).squeeze(-2)
+            if sim_v:
+                v = self.rnn.transition.step_input(v,torch.zeros_like(v))  
+            vs.append(v.squeeze(2))
+
             Q_dist = torch.distributions.Normal(
                 loc=prior_mean, scale=torch.sqrt(eff_var_prior)
             )
@@ -1130,72 +1125,11 @@ class VAE(nn.Module):
 
         Qzs_filt = torch.stack(Qzs_filt).permute(1, 2, 0, 3)
         Qzs_sm = Qzs_sm.permute(1, 2, 0, 3)
-
-        Xs_filt = self.rnn.get_observation(Qzs_filt, noise_scale=0)
-        Xs_sm = self.rnn.get_observation(Qzs_sm, noise_scale=0)
+        vs = torch.stack(vs).permute(1, 2, 0, 3)
+        Xs_filt = self.rnn.get_observation(Qzs_filt, noise_scale=0,v=vs)
+        Xs_sm = self.rnn.get_observation(Qzs_sm, noise_scale=0,v=vs)
 
         return Qzs_filt, Qzs_sm, Xs_filt, Xs_sm
-
-
-def backwards_compat(vae_params):
-    #TODO: move to loading function
-    if "prior_params" in vae_params:
-        vae_params["rnn_params"] = vae_params.pop("prior_params")
-    if "readout_rates" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["readout_from"] = vae_params["rnn_params"].pop(
-            "readout_rates"
-        )
-
-    if vae_params["enc_architecture"] == "CNN_causal":
-        vae_params["enc_architecture"] = "CNN"
-        vae_params["enc_params"]["padding_location"] = "causal"
-
-    if "padding_location" not in vae_params["enc_params"]:
-        vae_params["enc_params"]["padding_location"] = "causal"
-
-    if "readout_v " in vae_params["rnn_params"]:
-        _ = vae_params["rnn_params"].pop("readout_v")
-        vae_params["rnn_params"]["readout_from"] = "z_and_v"
-    if "train_noise_obs" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["train_noise_x"] = vae_params["rnn_params"].pop(
-            "train_noise_obs"
-        )
-    if "train_noise_prior" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["train_noise_z"] = vae_params["rnn_params"].pop(
-            "train_noise_prior"
-        )
-    if "train_noise_prior_t0" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["train_noise_z_t0"] = vae_params["rnn_params"].pop(
-            "train_noise_prior_t0"
-        )
-    if "prior_architecture" in vae_params:
-        vae_params["rnn_architecture"] = vae_params.pop("prior_architecture")
-    if vae_params["rnn_architecture"] == "PLRNN":
-        vae_params["rnn_architecture"] = "LRRNN"
-
-    if "scalar_noise_x" in vae_params["rnn_params"]:
-        if vae_params["rnn_params"]["scalar_noise_x"] == "Cov":
-            vae_params["rnn_params"]["noise_x"] = "full"
-        elif vae_params["rnn_params"]["scalar_noise_x"] == False:
-            vae_params["rnn_params"]["noise_x"] = "diag"
-        else:
-            vae_params["rnn_params"]["noise_x"] = "scalar"
-    
-    if "scalar_noise_z" in vae_params["rnn_params"]:
-        if vae_params["rnn_params"]["scalar_noise_z"] == "Cov":
-            vae_params["rnn_params"]["noise_z"] = "full"
-        elif vae_params["rnn_params"]["scalar_noise_z"] == False:
-            vae_params["rnn_params"]["noise_z"] = "diag"
-        else:
-            vae_params["rnn_params"]["noise_z"] = "scalar"
-
-    if "scalar_noise_z_t0" in vae_params["rnn_params"]:
-        if vae_params["rnn_params"]["scalar_noise_z_t0"] == "Cov":
-            vae_params["rnn_params"]["noise_z_t0"] = "full"
-        elif vae_params["rnn_params"]["scalar_noise_z_t0"] == False:
-            vae_params["rnn_params"]["noise_z_t0"] = "diag"
-        else:
-            vae_params["rnn_params"]["noise_z_t0"] = "scalar"
 
 
 def resample_Q(Qz, indices):

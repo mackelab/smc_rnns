@@ -22,7 +22,7 @@ Rz = 0.05
 Rx = 0.1
 n_repeats = 1
 bs = 10
-n_epochs = 1000
+n_epochs = 1500
 wandb = False
 
 # Initialise VI / student setup
@@ -61,47 +61,39 @@ rnn_params = {
     "init_noise_z": 0.1,
     "init_noise_z_t0": 1,
     "init_noise_x": task_params["R_x"],
-    "scalar_noise_z": "Cov",
-    "scalar_noise_x": False,
-    "scalar_noise_z_t0": "Cov",
+    "noise_z": "full",
+    "noise_x": "diag",
+    "noise_z_t0": "full",
     "identity_readout": True,
     "activation": "relu",
-    "exp_par": True,
-    "shared_tau": 0.7,
-    "readout_rates": task_params["out"],
+    "decay":.7,
+    "readout_from": task_params["out"],
     "train_obs_bias": False,
     "train_obs_weights": False,
-    "train_latent_bias": False,
     "train_neuron_bias": True,
-    "orth": False,
-    "m_norm": False,
     "weight_dist": "uniform",
     "weight_scaler": 1,  # /dim_N,
     "initial_state": "trainable",
-    "out_nonlinearity": "identity",
+    "out_nonlinearity": 'identity'
 }
+
 
 
 training_params = {
     "lr": 1e-3,
     "lr_end": 1e-5,
-    "opt_eps": 1e-8,
-    "n_epochs": n_epochs,
     "grad_norm": 0,
+    "n_epochs": n_epochs,
     "eval_epochs": 50,
     "batch_size": bs,
     "cuda": cuda,
     "smoothing": 20,
     "freq_cut_off": 10000,
-    "sim_obs_noise": 0,
-    "sim_latent_noise": 1,
     "k": 64,
-    "loss_f": "opt_VGTF",
+    "loss_f": "opt_smc",
     "resample": "systematic",  # , multinomial or none"
-    "run_eval": False,
+    "run_eval": True,
     "smooth_at_eval": False,
-    "observation_likelihood": "Gauss",
-    "t_forward": 0,
 }
 
 
@@ -129,7 +121,6 @@ for i in range(n_repeats):
     )
 
     print("True noise: " + str(Rz))
-    print("Inferred noise:")
+    print("Inferred diag noise std:")
     vae = orthogonalise_network(vae)
-    print(torch.tril(vae.rnn.R_z))
-    print(torch.sqrt(torch.tril(vae.rnn.R_z) @ torch.tril(vae.rnn.R_z).T))
+    print(vae.rnn.std_embed_z(vae.rnn.R_z).detach().numpy())

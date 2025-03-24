@@ -28,51 +28,47 @@ data_path = vi_rnn_dir + "/data/eeg/"  # data directory
 
 if str(os.popen("hostname").read()) == "Matthijss-MacBook-Air\n":
     cuda = False
+elif str(os.popen("hostname").read()) == "MatthijsDesktop\n":
+    cuda = True
 else:
     out_dir = "/mnt/qb/work/macke/mpals85/vi_rnn_models/sweepJul27/"
     data_path = "/home/macke/mpals85/vi_rnns/data/eeg/"
-
+    cuda = True
 
 # initialise dataset
 # ------------------
 task_params = {"name": "EEG", "dur": 50, "n_trials": 50 * bs}
-data = np.float32(np.load(data_path + data_name))
-data_eval = np.float32(np.load(data_path + data_eval_name))
+data = np.float32(np.load(data_path + data_name)).T
+data_eval = np.float32(np.load(data_path + data_eval_name)).T
 task = Basic_dataset(task_params, data, data_eval)
-dim_x = task.data.shape[1]
+dim_x = task.data.shape[0]
 
 
 # Train the VAE
 # ------------------
 for _ in range(n_runs):
     # initialise encoder
-    enc_params = {"obs_grad": True, "init_scale": 0.1}
+    enc_params = {}
 
     # initialise prior
     rnn_params = {
-        "clipped": True,
         "train_noise_x": True,
         "train_noise_z": True,
         "train_noise_z_t0": True,
         "init_noise_z": 0.1,
         "init_noise_z_t0": 1,
         "init_noise_x": 0.1,
-        "scalar_noise_z": "Cov",
-        "scalar_noise_x": False,
-        "scalar_noise_z_t0": "Cov",
+        "noise_z": "full",
+        "noise_x": "diag",
+        "noise_z_t0": "full",
         "identity_readout": False,
-        "activation": "relu",
-        "exp_par": True,
-        "shared_tau": 0.9,
-        "readout_rates": False,  # "currents",
+        "activation": "clipped_relu",
+        "decay": 0.9,
+        "readout_from": "z",  
         "train_obs_bias": True,
         "train_obs_weights": True,
-        "train_latent_bias": False,
         "train_neuron_bias": True,
-        "orth": False,
-        "m_norm": False,
         "weight_dist": "uniform",
-        "weight_scaler": 1,  # /dim_N,
         "initial_state": "trainable",
         "out_nonlinearity": "identity",
         "full_rank": True,
@@ -82,7 +78,6 @@ for _ in range(n_runs):
     training_params = {
         "lr": 1e-3,
         "lr_end": 1e-6,
-        "opt_eps": 1e-8,
         "n_epochs": n_epochs,
         "grad_norm": 0,
         "eval_epochs": 25,
@@ -90,11 +85,9 @@ for _ in range(n_runs):
         "cuda": cuda,
         "smoothing": 20,
         "freq_cut_off": -1,
-        "sim_obs_noise": 0,
-        "sim_latent_noise": 1,
         "k": 10,
         "resample": "systematic",
-        "loss_f": "opt_VGTF",
+        "loss_f": "opt_smc",
         "run_eval": True,
         "smooth_at_eval": True,
     }
@@ -105,7 +98,7 @@ for _ in range(n_runs):
         "dim_N": dim_N,
         "enc_architecture": "Inv_Obs",
         "enc_params": enc_params,
-        "rnn_architecture": "PLRNN",
+        "rnn_architecture": "LRRNN",
         "rnn_params": rnn_params,
     }
 

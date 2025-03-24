@@ -4,21 +4,16 @@ train_noise_z_t0: true
 init_noise_z: .05
 init_noise_z_t0: 1
 init_noise_x: .1
-scalar_noise_z: false
-scalar_noise_x: false
-scalar_noise_z_t0: false
+noise_z: "diag"
+noise_x: "diag"
+noise_z_t0: "diag"
 identity_readout: false
 activation: clipped_relu
-exp_par: true
-shared_tau: .9
-readout_rates: false
+decay: .9
+readout_from: "z"
 train_obs_bias: true
 train_obs_weights: true
-train_latent_bias: false
 train_neuron_bias: true
-orth: false
-m_norm: false
 weight_dist: uniform
-weight_scaler: 1 # / dim_N
 initial_state: zero
 out_nonlinearity: softplus

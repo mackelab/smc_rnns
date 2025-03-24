@@ -99,7 +99,7 @@ def train(
     )
     print("Learning rate decay factor " + str(gamma))
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        optimizer, gamma, last_epoch=-1, verbose=False
+        optimizer, gamma, last_epoch=-1
     )
 
     target_path = (
