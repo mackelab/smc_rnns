@@ -23,7 +23,7 @@ def eval_kl_pse(
     smooth_at_eval=True,
     optimal_proposal=True,
     observation_model="Gauss",
-    sim_v=False
+    sim_v=False,
 ):
     """
     Evaluate the VAE by looking at distribution over states and time
@@ -51,13 +51,22 @@ def eval_kl_pse(
         if len(task.data_eval.shape) == 2:
             data = data.unsqueeze(0)
             u = u.unsqueeze(0)
-        dur = min(data.shape[2],10000)
+        dur = min(data.shape[2], 10000)
 
-        _, data_gen, _ =predict(vae,u=u,x=data,dur=dur,initial_state=init_state_eval, 
-                                observation_model=observation_model,optimal_proposal=optimal_proposal,
-                                cut_off=cut_off, verbose=True, sim_v=sim_v)         
+        _, data_gen, _ = predict(
+            vae,
+            u=u,
+            x=data,
+            dur=dur,
+            initial_state=init_state_eval,
+            observation_model=observation_model,
+            optimal_proposal=optimal_proposal,
+            cut_off=cut_off,
+            verbose=True,
+            sim_v=sim_v,
+        )
         data = data.permute(0, 2, 1).reshape(-1, vae.dim_x)
-        data_gen =torch.from_numpy(data_gen).permute(0, 2, 1).reshape(-1, vae.dim_x)
+        data_gen = torch.from_numpy(data_gen).permute(0, 2, 1).reshape(-1, vae.dim_x)
         # potentially smooth
         if smooth_at_eval:
             window = signal.windows.hann(15)
@@ -90,4 +99,3 @@ def mean_rate(data_gen, data_real):
         np.mean((data_mean_rates - data_gen_mean_rates) ** 2) / data_gen.shape[1]
     )
     return mean_rate_error
-

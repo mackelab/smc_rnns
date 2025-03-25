@@ -64,7 +64,7 @@ for _ in range(n_runs):
         "identity_readout": False,
         "activation": "clipped_relu",
         "decay": 0.9,
-        "readout_from": "z",  
+        "readout_from": "z",
         "train_obs_bias": True,
         "train_obs_weights": True,
         "train_neuron_bias": True,

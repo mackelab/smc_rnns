@@ -45,10 +45,12 @@ class LRRNN(nn.Module):
 
         # Initial latent state noise
         self.R_z_t0, self.std_embed_z_t0, self.var_embed_z_t0 = init_noise(
-            params["noise_z_t0"], self.d_z, params["init_noise_z_t0"], params["train_noise_z_t0"]
+            params["noise_z_t0"],
+            self.d_z,
+            params["init_noise_z_t0"],
+            params["train_noise_z_t0"],
         )
 
-             
         # initialise the transition step
         # ---------
 
@@ -72,7 +74,6 @@ class LRRNN(nn.Module):
                 weight_dist=params["weight_dist"],
                 train_neuron_bias=params["train_neuron_bias"],
             )
-        
 
         # initialise the observation step
         # ---------
@@ -85,11 +86,13 @@ class LRRNN(nn.Module):
             out_dim = self.d_N  # readout from N-dim neuron activity
         elif self.readout_from == "z_and_v":
             out_dim = self.d_z + self.d_u  # readout from latents and inputs
-        elif self.readout_from =="z":
+        elif self.readout_from == "z":
             out_dim = self.d_z  # readout from latents
         else:
-            raise ValueError("readout_from not recognised, use rates, currents, z_and_v, or z")
-        
+            raise ValueError(
+                "readout_from not recognised, use rates, currents, z_and_v, or z"
+            )
+
         self.observation = Observation(
             out_dim,
             self.d_x,
@@ -102,7 +105,6 @@ class LRRNN(nn.Module):
         # initialise the initial state
         # ---------
 
-        
         if "full_rank" in params.keys() and params["full_rank"] == True:
             self.initial_state = nn.Parameter(torch.zeros(self.d_z), requires_grad=True)
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(0)
@@ -150,7 +152,7 @@ class LRRNN(nn.Module):
         if u is not None and sim_v == False:
             v = u
         elif u is None and v is None:
-            v = torch.zeros(z.shape[0],0,z.shape[2],z.shape[3],device=z.device)
+            v = torch.zeros(z.shape[0], 0, z.shape[2], z.shape[3], device=z.device)
         z = self.transition(z, v=v)
         if u is not None:
             v = self.transition.step_input(v, u)
@@ -353,7 +355,7 @@ class Observation(nn.Module):
 
         # for Poisson we need to rectify outputs to be positive
         if out_nonlinearity == "exp":
-            exp = torch.exp            
+            exp = torch.exp
             self.nonlinearity = lambda x: exp(x) + 1e-10
         elif out_nonlinearity == "relu":
             self.nonlinearity = lambda x: torch.relu(x) + 1e-10
@@ -425,12 +427,9 @@ class Transition(nn.Module):
             self.dnonlinearity = lambda x: torch.ones_like(x)
 
         # time constants
-        self.decay = nn.Parameter(
-            torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay))
-        )
+        self.decay = nn.Parameter(torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay)))
         self.cast_decay = lambda x: torch.exp(-torch.exp(x))
 
-      
         # bias of the neurons
         if nonlinearity == "clipped_relu":
             self.h = nn.Parameter(
@@ -449,7 +448,6 @@ class Transition(nn.Module):
         else:
             print("WARNING: weight distribution not implemented, using uniform")
             self.n, self.m = initialize_Ws_uniform(dz, hidden_dim)
-    
 
         # Input weights
         if self.du > 0:
@@ -470,10 +468,7 @@ class Transition(nn.Module):
         """
         A = self.cast_decay(self.decay)
         R = self.get_rates(z, v=v)
-        z = (
-            A * z
-            + torch.einsum("zN,BNTK->BzTK", self.n, R)
-        )
+        z = A * z + torch.einsum("zN,BNTK->BzTK", self.n, R)
         return z
 
     def step_input(self, v, u):
@@ -496,7 +491,9 @@ class Transition(nn.Module):
             v (torch.tensor; n_trials x dim_u x time_steps x k): filtered input
         Returns:
             R (torch.tensor; n_trials x dim_N x time_steps x k): neuron activity"""
-        X = torch.einsum("Nz,BzTK->BNTK", self.m, z) + torch.einsum("Nu,BuTK->BNTK", self.Wu, v)
+        X = torch.einsum("Nz,BzTK->BNTK", self.m, z) + torch.einsum(
+            "Nu,BuTK->BNTK", self.Wu, v
+        )
         R = self.nonlinearity(X, self.h.unsqueeze(0).unsqueeze(2).unsqueeze(3))
         return R
 
@@ -550,11 +547,8 @@ class Transition_FullRank(nn.Module):
             self.dnonlinearity = lambda x: torch.ones_like(x)
 
         # time constants
-        self.decay= nn.Parameter(
-            torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay))
-        )
+        self.decay = nn.Parameter(torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay)))
         self.cast_decay = lambda x: torch.exp(-torch.exp(x))
-    
 
         # bias of the neurons
         if nonlinearity == "clipped_relu":
@@ -581,15 +575,11 @@ class Transition_FullRank(nn.Module):
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         """
         A = self.cast_decay(self.decay)
-        z = (
-            A * z
-            + (1 - A)
-            * (
-                torch.einsum(
-                    "zN,BNTK->BzTK",
-                    self.W,
-                    self.nonlinearity(z, self.h.unsqueeze(0).unsqueeze(2).unsqueeze(3)),
-                )
+        z = A * z + (1 - A) * (
+            torch.einsum(
+                "zN,BNTK->BzTK",
+                self.W,
+                self.nonlinearity(z, self.h.unsqueeze(0).unsqueeze(2).unsqueeze(3)),
             )
         )
 

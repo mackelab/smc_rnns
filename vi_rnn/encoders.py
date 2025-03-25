@@ -12,7 +12,7 @@ class Inverse_Observation(nn.Module):
     Invert the (linear) observation model to obtain e(z|x)
     """
 
-    def __init__(self, dim_x, dim_z, params, inv_obs,scale=1e-5):
+    def __init__(self, dim_x, dim_z, params, inv_obs, scale=1e-5):
         """
         Args:
             dim_x (int): dimensionality of the data
@@ -26,9 +26,7 @@ class Inverse_Observation(nn.Module):
         self.dim_z = dim_z
         self.params = params
 
-        self.logvar = nn.Parameter(
-            2 * torch.log(torch.ones(self.dim_z) * scale)
-        )
+        self.logvar = nn.Parameter(2 * torch.log(torch.ones(self.dim_z) * scale))
 
         self.mean = inv_obs
 
@@ -45,9 +43,7 @@ class Inverse_Observation(nn.Module):
             eps_sample (torch.tensor; batch_size x dim_z x dim_T x k): sample from the standard normal distribution
         """
 
-        mean = (
-            self.mean(x).unsqueeze(-1).repeat(1, 1, 1, k)
-        )
+        mean = self.mean(x).unsqueeze(-1).repeat(1, 1, 1, k)
         logvar = (
             self.logvar.unsqueeze(0)
             .unsqueeze(-1)
@@ -166,7 +162,6 @@ class CNN_encoder(nn.Module):
                     self.logvar_conv.bias + (np.log(params["init_scale"]) * 2)
                 )  # = torch.zeros_like(self.logstd.bias)
             self.logvar = self.logvar_conv.bias
-
 
     def forward(self, x, k=1):
         """

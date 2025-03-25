@@ -2,7 +2,7 @@
 lfads-torch modules needed for unconditional sampling
 
 Author: Andrew Sedler
-Sources: 
+Sources:
   - https://github.com/arsedler9/lfads-torch/blob/d8b4b3ba87a49fd74a3c06afb3ec1b695c6a2227/lfads_torch/modules/priors.py
 """
 
@@ -68,7 +68,7 @@ class AutoregressiveMultivariateNormal(nn.Module):
     def log_prob(self, sample):
         # Compute alpha and process variance
         alphas = torch.exp(-1.0 / torch.exp(self.logtaus))
-        logpvars = self.lognvars - torch.log(1 - alphas ** 2)
+        logpvars = self.lognvars - torch.log(1 - alphas**2)
         # Create autocorrelative transformation
         transform = AffineTransform(loc=0, scale=alphas)
         # Align previous samples and compute means and stddevs

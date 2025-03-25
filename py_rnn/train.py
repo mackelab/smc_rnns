@@ -259,7 +259,7 @@ def extract_lfp(x, rnn_cell, normalize=True):
 
 def l2_rates_reg(rates, *args):
     """l2 reg on non zero mean single unit firing rates"""
-    return torch.mean(rates ** 2)
+    return torch.mean(rates**2)
 
 
 def offset_loss(rates, *args):
@@ -298,7 +298,7 @@ class LFPLoss(object):
         lfp = extract_lfp(x, rnn_cell)
         a = torch.tensordot(self.sinF, lfp, dims=[[0], [1]]) / self.T
         b = torch.tensordot(self.cosF, lfp, dims=[[0], [1]]) / self.T
-        norm = torch.sqrt(a ** 2 + b ** 2)
+        norm = torch.sqrt(a**2 + b**2)
         lfp_loss = 0.5 - torch.mean(norm)
         return lfp_loss
 

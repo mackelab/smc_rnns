@@ -11,6 +11,7 @@ import torch
 import numpy as np
 from initialize_parameterize import full_cov_embed, chol_cov_embed
 
+
 class VAE(nn.Module):
     """
     VAE with low-rank RNN / dynamical systems prior
@@ -145,7 +146,7 @@ class VAE(nn.Module):
         Obs_bias = self.rnn.observation.Bias.squeeze(-1)
 
         # Calculate the Kalman gain and interpolation alpha
-        if dim_x < dim_z*4:
+        if dim_x < dim_z * 4:
             Kalman_gain = (
                 eff_var_prior_t0
                 @ B
@@ -220,7 +221,7 @@ class VAE(nn.Module):
         u = u.unsqueeze(-1)  # account for k
 
         # precalculate Kalman Gain / Interpolation
-        if dim_x < dim_z*4:
+        if dim_x < dim_z * 4:
             Kalman_gain = (
                 eff_var_prior
                 @ B
@@ -462,7 +463,7 @@ class VAE(nn.Module):
         else:
             v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)
         # Calculate the initial posterior mean and covariance
-        
+
         precZ = 1 / eff_var_prior_t0
         precE = 1 / Evar[:, :, 0]
         precQ = precZ + precE
@@ -797,7 +798,6 @@ class VAE(nn.Module):
         empty = torch.ones(0, device=Qzs.device)
         return Loss, Qzs, log_xs, empty, empty, log_likelihood, empty
 
-
     def to_device(self, device):
         """Move network between cpu / gpu (cuda)"""
         self.rnn.to(device=device)
@@ -818,7 +818,9 @@ class VAE(nn.Module):
         marginal_smoothing=False,
         sim_v=False,
     ):
-        return self.predict_NLB(x,u,k,t_held_in,t_forward,resample,marginal_smoothing,sim_v=sim_v)
+        return self.predict_NLB(
+            x, u, k, t_held_in, t_forward, resample, marginal_smoothing, sim_v=sim_v
+        )
 
     def predict_NLB(
         self,
@@ -829,7 +831,7 @@ class VAE(nn.Module):
         t_forward=0,
         resample="systematic",
         marginal_smoothing=False,
-        sim_v=False
+        sim_v=False,
     ):
         """
         Obtain filtering and smoothing posteriors given data and optionally input
@@ -862,9 +864,7 @@ class VAE(nn.Module):
         )
 
         # Run the encoder
-        Emean, log_Evar = self.encoder(
-            x[:, : self.dim_x, :t_held_in], k=k
-        )  # Bs,Dx,T,K
+        Emean, log_Evar = self.encoder(x[:, : self.dim_x, :t_held_in], k=k)  # Bs,Dx,T,K
         x_hat = x.unsqueeze(-1)
 
         # Project and clamp the variances
@@ -902,12 +902,20 @@ class VAE(nn.Module):
             u = torch.zeros(x.shape[0], self.dim_u, x.shape[2]).to(x.device)
         # Get the initial prior mean
         if sim_v:
-            prior_mean = self.rnn.get_initial_state(torch.zeros_like(u[:,:,0])).unsqueeze(2).expand(bs,self.dim_z,k)
-            v = torch.zeros(bs,self.dim_u,1,1,device = x.device)
-        else: #initialise in the affine subspace corresponding to the input
-            prior_mean = self.rnn.get_initial_state(u[:,:,0]).unsqueeze(2).expand(bs,self.dim_z,k) #BS,Dz,K
-            v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)  # add particle dimension       
- 
+            prior_mean = (
+                self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0]))
+                .unsqueeze(2)
+                .expand(bs, self.dim_z, k)
+            )
+            v = torch.zeros(bs, self.dim_u, 1, 1, device=x.device)
+        else:  # initialise in the affine subspace corresponding to the input
+            prior_mean = (
+                self.rnn.get_initial_state(u[:, :, 0])
+                .unsqueeze(2)
+                .expand(bs, self.dim_z, k)
+            )  # BS,Dz,K
+            v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)  # add particle dimension
+
         # get the posterior mean and covariance
         precZ = 1 / eff_var_prior_t0
         precE = 1 / Evar[:, :, 0]
@@ -929,12 +937,14 @@ class VAE(nn.Module):
         )
 
         # Get the observation mean and calculate likelihood of the data
-        mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0, v=v).squeeze(-2)
+        mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0, v=v).squeeze(
+            -2
+        )
         ll_x = ll_x_func(x_hat[:, :, 0], mean_x[:, : x_hat.shape[1]])
 
         # Calculate the log weights
         log_w = ll_x + ll_pz - ll_qz
-        vs=[v.squeeze(2)]
+        vs = [v.squeeze(2)]
 
         # Append the log weights and log likelihoods
         log_ws.append(log_w)
@@ -961,14 +971,12 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Get the prior mean
-            prior_mean = self.rnn.transition(
-                Qz.unsqueeze(-2), v=v
-            )
+            prior_mean = self.rnn.transition(Qz.unsqueeze(-2), v=v)
             prior_mean = prior_mean.squeeze(-2)
             if sim_v:
-                v = self.rnn.transition.step_input(v,u[:, :, t-1].unsqueeze(2))   
+                v = self.rnn.transition.step_input(v, u[:, :, t - 1].unsqueeze(2))
             else:
-                v = u[:, :, t].unsqueeze(2)  
+                v = u[:, :, t].unsqueeze(2)
             vs.append(v.squeeze(2))
 
             # Calculate the posterior mean and covariance
@@ -992,9 +1000,9 @@ class VAE(nn.Module):
             )
 
             # Get the observation mean and calculate likelihood of the data
-            mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0,v=v).squeeze(
-                -2
-            )
+            mean_x = self.rnn.get_observation(
+                Qz.unsqueeze(-2), noise_scale=0, v=v
+            ).squeeze(-2)
             ll_x = ll_x_func(x_hat[:, :, t], mean_x[:, : x_hat.shape[1]])
 
             # Calculate the log weights
@@ -1022,7 +1030,7 @@ class VAE(nn.Module):
             # Here prior and posterior are the same and we just need the likelihood of the data
             prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=v).squeeze(2)
             if sim_v:
-                v = self.rnn.transition.step_input(v,torch.zeros_like(v))  
+                v = self.rnn.transition.step_input(v, torch.zeros_like(v))
             vs.append(v.squeeze(2))
             # Sample from the posterior and calculate likelihood
             Q_dist = torch.distributions.Normal(
@@ -1030,10 +1038,9 @@ class VAE(nn.Module):
             )
             Qz = Q_dist.rsample()
 
-            mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0,v=v).squeeze(
-                -2
-            )
-
+            mean_x = self.rnn.get_observation(
+                Qz.unsqueeze(-2), noise_scale=0, v=v
+            ).squeeze(-2)
 
             ll_x = ll_x_func(x_hat[:, :, t], mean_x[:, : x_hat.shape[1]])
             log_w = ll_x
@@ -1070,7 +1077,7 @@ class VAE(nn.Module):
                 # Marginal smoothing, note this jas K^2 cost!
 
                 prior_mean = self.rnn(
-                    Qzs[t].unsqueeze(-2), noise_scale=0, u=vs[t-1].unsqueeze(2)
+                    Qzs[t].unsqueeze(-2), noise_scale=0, u=vs[t - 1].unsqueeze(2)
                 ).squeeze(-2)
                 probs_ij = (
                     torch.distributions.Normal(
@@ -1095,7 +1102,7 @@ class VAE(nn.Module):
             else:
                 # Conditional smoothing
                 prior_mean = self.rnn.transition(
-                    Qzs[t].unsqueeze(-2), v=vs[t-1].unsqueeze(-2)
+                    Qzs[t].unsqueeze(-2), v=vs[t - 1].unsqueeze(-2)
                 ).squeeze(-2)
                 ll_pz = (
                     torch.distributions.Normal(loc=prior_mean, scale=eff_std_prior)
@@ -1111,9 +1118,9 @@ class VAE(nn.Module):
         # Use forward samples for the last n_forward steps
 
         for t in range(t_held_in, t_held_in + t_forward):
-            prior_mean = self.rnn.transition(Qz.unsqueeze(-2), v = v).squeeze(-2)
+            prior_mean = self.rnn.transition(Qz.unsqueeze(-2), v=v).squeeze(-2)
             if sim_v:
-                v = self.rnn.transition.step_input(v,torch.zeros_like(v))  
+                v = self.rnn.transition.step_input(v, torch.zeros_like(v))
             vs.append(v.squeeze(2))
 
             Q_dist = torch.distributions.Normal(
@@ -1126,8 +1133,8 @@ class VAE(nn.Module):
         Qzs_filt = torch.stack(Qzs_filt).permute(1, 2, 0, 3)
         Qzs_sm = Qzs_sm.permute(1, 2, 0, 3)
         vs = torch.stack(vs).permute(1, 2, 0, 3)
-        Xs_filt = self.rnn.get_observation(Qzs_filt, noise_scale=0,v=vs)
-        Xs_sm = self.rnn.get_observation(Qzs_sm, noise_scale=0,v=vs)
+        Xs_filt = self.rnn.get_observation(Qzs_filt, noise_scale=0, v=vs)
+        Xs_sm = self.rnn.get_observation(Qzs_sm, noise_scale=0, v=vs)
 
         return Qzs_filt, Qzs_sm, Xs_filt, Xs_sm
 

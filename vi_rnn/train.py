@@ -94,7 +94,6 @@ def train_VAE(
     dataloader.dataset.stim = dataloader.dataset.stim.to(device=device)
     dataloader.dataset.stim_eval = dataloader.dataset.stim_eval.to(device=device)
 
-  
     # initialize wandb
     if sync_wandb:
         wandb.init(
@@ -135,13 +134,13 @@ def train_VAE(
             # DO EVALUATION
             if training_params["run_eval"] and i % training_params["eval_epochs"] == 0:
                 vae.eval()
-                if ((training_params["loss_f"] == "opt_smc") or 
-                    ("observation_likelihood" in training_params and 
-                     training_params["observation_likelihood"]=="Gauss")
+                if (training_params["loss_f"] == "opt_smc") or (
+                    "observation_likelihood" in training_params
+                    and training_params["observation_likelihood"] == "Gauss"
                 ):
-                    observation_model="Gauss"
+                    observation_model = "Gauss"
                 elif training_params["observation_likelihood"] == "Poisson":
-                    observation_model="Poisson"                                                                                 
+                    observation_model = "Poisson"
                 if training_params["loss_f"] == "opt_smc":
                     optimal_proposal = True
                 else:
@@ -158,9 +157,9 @@ def train_VAE(
                     smoothing=training_params["smoothing"],
                     freq_cut_off=training_params["freq_cut_off"],
                     smooth_at_eval=training_params["smooth_at_eval"],
-                    optimal_proposal= optimal_proposal,
+                    optimal_proposal=optimal_proposal,
                     observation_model=observation_model,
-                    sim_v = training_params["sim_v"] 
+                    sim_v=training_params["sim_v"],
                 )
                 training_params["KL_x"].append(klx_bin)
                 training_params["PSH"].append(psH)
@@ -181,10 +180,19 @@ def train_VAE(
                     if len(task.data_eval.shape) == 2:
                         data = data.unsqueeze(0)
                         u = u.unsqueeze(0)
-                    dur = min(data.shape[2],1000)
-                    Z, data_gen, _ =predict(vae,u=u,x=data,dur=dur,initial_state=init_state_eval, 
-                                            observation_model=observation_model,optimal_proposal=optimal_proposal,
-                                            cut_off=0, verbose=True, sim_v=training_params["sim_v"])               
+                    dur = min(data.shape[2], 1000)
+                    Z, data_gen, _ = predict(
+                        vae,
+                        u=u,
+                        x=data,
+                        dur=dur,
+                        initial_state=init_state_eval,
+                        observation_model=observation_model,
+                        optimal_proposal=optimal_proposal,
+                        cut_off=0,
+                        verbose=True,
+                        sim_v=training_params["sim_v"],
+                    )
                     plt.figure()
                     plt.plot(Z[0].T)
                     plt.xlim(0)
@@ -256,7 +264,6 @@ def train_VAE(
                     t_forward=training_params["t_forward"],
                     sim_v=training_params["sim_v"],
                 )
-
 
             batch_ll += log_likelihood.mean().item()
             batch_ll_x += ll_x.mean().item()

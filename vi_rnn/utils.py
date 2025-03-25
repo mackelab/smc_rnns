@@ -153,7 +153,9 @@ def orthogonalise_network(vae):
         n_new = (v[: vae.dim_z].T * s[: vae.dim_z]).T
         vae.rnn.transition.m.copy_(m_new)
         vae.rnn.transition.n.copy_(n_new)
-        vae.rnn.R_z = torch.nn.Parameter(inverse_chol_cov_embed(torch.linalg.cholesky(proj_chol @ proj_chol.T)))
+        vae.rnn.R_z = torch.nn.Parameter(
+            inverse_chol_cov_embed(torch.linalg.cholesky(proj_chol @ proj_chol.T))
+        )
         vae.rnn.params["noise_z"] = "full"
     return vae
 
@@ -207,7 +209,9 @@ def rotate_basis_vectors(vae, rotation):
         vae.rnn.transition.m.copy_(m_new)
         vae.rnn.transition.n.copy_(n_new)
         chol_cov_embed = lambda x: torch.tril(x)
-        vae.rnn.R_z = torch.nn.Parameter(inverse_chol_cov_embed(torch.linalg.cholesky(proj_chol @ proj_chol.T)))
+        vae.rnn.R_z = torch.nn.Parameter(
+            inverse_chol_cov_embed(torch.linalg.cholesky(proj_chol @ proj_chol.T))
+        )
         vae.rnn.params["noise_z"] = "full"
     return vae
 

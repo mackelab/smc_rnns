@@ -37,7 +37,7 @@ enc_params = {
     "n_hidden": 64,
     "init_scale": 0.1,
     "constant_var": False,
-    "pading_location":"causal"
+    "pading_location": "causal",
 }
 
 enc_params["first_layer"] = wandb.config.first_layer
