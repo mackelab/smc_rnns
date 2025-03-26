@@ -2,7 +2,7 @@
 lfads-torch modules needed for generator
 
 Author: Andrew Sedler
-Sources: 
+Sources:
   - https://github.com/arsedler9/lfads-torch/blob/d8b4b3ba87a49fd74a3c06afb3ec1b695c6a2227/lfads_torch/modules/recurrent.py
   - https://github.com/arsedler9/lfads-torch/blob/d8b4b3ba87a49fd74a3c06afb3ec1b695c6a2227/lfads_torch/modules/decoder.py
 """

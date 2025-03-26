@@ -12,7 +12,7 @@ class Inverse_Observation(nn.Module):
     Invert the (linear) observation model to obtain e(z|x)
     """
 
-    def __init__(self, dim_x, dim_z, params, inv_obs,scale=1e-5):
+    def __init__(self, dim_x, dim_z, params, inv_obs, scale=1e-5):
         """
         Args:
             dim_x (int): dimensionality of the data
@@ -26,9 +26,7 @@ class Inverse_Observation(nn.Module):
         self.dim_z = dim_z
         self.params = params
 
-        self.logvar = nn.Parameter(
-            2 * torch.log(torch.ones(self.dim_z) * scale)
-        )
+        self.logvar = nn.Parameter(2 * torch.log(torch.ones(self.dim_z) * scale))
 
         self.mean = inv_obs
 
@@ -45,9 +43,7 @@ class Inverse_Observation(nn.Module):
             eps_sample (torch.tensor; batch_size x dim_z x dim_T x k): sample from the standard normal distribution
         """
 
-        mean = (
-            self.mean(x).unsqueeze(-1).repeat(1, 1, 1, k)
-        )
+        mean = self.mean(x).unsqueeze(-1).repeat(1, 1, 1, k)
         logvar = (
             self.logvar.unsqueeze(0)
             .unsqueeze(-1)
@@ -73,7 +69,7 @@ class CNN_encoder(nn.Module):
         super(CNN_encoder, self).__init__()
         self.dim_x = dim_x
         self.dim_z = dim_z
-        kernels = params["init_kernel_sizes"]
+        kernels = params["init_kernel_sizes"] if "init_kernel_sizes" in params else params["kernel_sizes"]
         n_channels = params["n_channels"]
         self.params = params
         print(
@@ -110,7 +106,9 @@ class CNN_encoder(nn.Module):
             elif params["padding_location"] == "windowed":
                 # pad for windowed convs
                 pad = (kernels[i] // 2, (kernels[i] // 2) - 1, 0, 0)
-
+            else:
+                raise ValueError("padding_location not recognised, use 'causal', 'acausal' or 'windowed'")
+         
             initial_convs.append(Pad(pad, mode=params["padding_mode"]))
             initial_convs.append(
                 nn.Conv1d(
@@ -127,7 +125,9 @@ class CNN_encoder(nn.Module):
             elif params["nonlinearity"] == "gelu":
                 initial_convs.append(torch.nn.GELU())
                 initial_convs_std.append(torch.nn.GELU())
-
+            else:
+                raise ValueError("nonlinearity not recognised, use 'leaky_relu' or 'gelu'")
+            
             if params["padding_location"] == "causal":
                 # zero pad for causal convs
                 pad = (kernels[-1] - 1, 0, 0, 0)
@@ -137,7 +137,7 @@ class CNN_encoder(nn.Module):
             elif params["padding_location"] == "windowed":
                 # pad for windowed convs
                 pad = (kernels[-1] // 2, (kernels[-1] // 2) - 1, 0, 0)
-
+             
         initial_convs.append(Pad(pad, mode=params["padding_mode"]))
 
         self.initial_stack = nn.Sequential(*initial_convs)
@@ -166,7 +166,6 @@ class CNN_encoder(nn.Module):
                     self.logvar_conv.bias + (np.log(params["init_scale"]) * 2)
                 )  # = torch.zeros_like(self.logstd.bias)
             self.logvar = self.logvar_conv.bias
-
 
     def forward(self, x, k=1):
         """

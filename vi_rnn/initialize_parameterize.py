@@ -3,35 +3,33 @@ import torch.nn as nn
 import numpy as np
 
 
-
 def chol_cov_embed(x):
     """
     Positive semi-definite embedding of a vector as a lower triangular matrix
     """
     chol_cov = torch.tril(x, diagonal=-1) + torch.diag_embed(
-    torch.exp(x[range(x.shape[0]), range(x.shape[0])] / 2))
+        torch.exp(x[range(x.shape[0]), range(x.shape[0])] / 2)
+    )
     return chol_cov
+
 
 def inverse_chol_cov_embed(x):
     """
     such that x = chol_cov_embed(inverse_chol_cov_embed(x))
     for x a lower triangular matrix
     """
-    return torch.diag_embed(torch.log(x[range(x.shape[0]), range(x.shape[0])]))*2 + torch.tril(x, diagonal=-1)
-
-
+    return torch.diag_embed(
+        torch.log(x[range(x.shape[0]), range(x.shape[0])])
+    ) * 2 + torch.tril(x, diagonal=-1)
 
 
 def full_cov_embed(x):
     """
     Return positive semi-definite matrix
     """
-    
-    cov = chol_cov_embed(x) @ (
-    chol_cov_embed(x).T
-    )
-    return cov
 
+    cov = chol_cov_embed(x) @ (chol_cov_embed(x).T)
+    return cov
 
 
 def init_noise(noise_type, dim, init_scale, train_noise):
@@ -49,31 +47,28 @@ def init_noise(noise_type, dim, init_scale, train_noise):
     """
     if noise_type == "full":
         R = nn.Parameter(
-        torch.eye(dim) * np.log(init_scale) * 2,
-        requires_grad=train_noise,
+            torch.eye(dim) * np.log(init_scale) * 2,
+            requires_grad=train_noise,
         )
-        std_embed = lambda x: torch.sqrt(
-            torch.diagonal(full_cov_embed(x))
-        )
+        std_embed = lambda x: torch.sqrt(torch.diagonal(full_cov_embed(x)))
         var_embed = lambda x: (full_cov_embed(x))
     elif noise_type == "diag":
         R = nn.Parameter(
-        torch.ones(dim) * np.log(init_scale) * 2,
-        requires_grad=train_noise,
+            torch.ones(dim) * np.log(init_scale) * 2,
+            requires_grad=train_noise,
         )
         std_embed = lambda log_var: torch.exp(log_var / 2)
         var_embed = lambda log_var: torch.exp(log_var)
     elif noise_type == "scalar":
         R = nn.Parameter(
-        torch.ones(1) * np.log(init_scale) * 2,
-        requires_grad=train_noise,
+            torch.ones(1) * np.log(init_scale) * 2,
+            requires_grad=train_noise,
         )
         std_embed = lambda log_var: torch.exp(log_var / 2).expand(dim)
         var_embed = lambda log_var: torch.exp(log_var).expand(dim)
     else:
         print("invalid noise type, use full, diag, or scalar")
     return R, std_embed, var_embed
-
 
 
 def initialize_Ws_uniform(dz, N):

@@ -66,7 +66,7 @@ rnn_params = {
     "noise_z_t0": "full",
     "identity_readout": True,
     "activation": "relu",
-    "decay":.7,
+    "decay": 0.7,
     "readout_from": task_params["out"],
     "train_obs_bias": False,
     "train_obs_weights": False,
@@ -74,9 +74,8 @@ rnn_params = {
     "weight_dist": "uniform",
     "weight_scaler": 1,  # /dim_N,
     "initial_state": "trainable",
-    "out_nonlinearity": 'identity'
+    "out_nonlinearity": "identity",
 }
-
 
 
 training_params = {

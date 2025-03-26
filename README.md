@@ -3,16 +3,19 @@ Code accompanying [Inferring stochastic low-rank recurrent neural networks from 
 
 Matthijs Pals, A Erdem Sağtekin, Felix Pei, Manuel Gloeckler and Jakob H Macke, 2024
 
-### Check out the tutorial 
+### Check out the tutorial! 
 Create a conda environment:
-```
-cd smc_rnns
-conda env create -f smc_rnn_env.yml
-```
-And open up:
-```
-tutorial/tutorial_continuous.ipynb
-```
+
+`cd smc_rnns`
+
+`conda env create -f smc_rnn_env.yml` (on Linux)
+
+`conda enc create -f smc_rnn_env_mac.yml` (on Mac OS)
+
+
+and open:
+
+ `tutorial/tutorial_continuous.ipynb`
 
 
 ### Finding fixed points

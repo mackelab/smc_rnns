@@ -132,7 +132,7 @@ def load_model(name, load_encoder=True):
             vae_params["rnn_params"]["noise_x"] = "diag"
         else:
             vae_params["rnn_params"]["noise_x"] = "scalar"
-    
+
     if "scalar_noise_z" in vae_params["rnn_params"]:
         if vae_params["rnn_params"]["scalar_noise_z"] == "Cov":
             vae_params["rnn_params"]["noise_z"] = "full"
@@ -148,7 +148,6 @@ def load_model(name, load_encoder=True):
             vae_params["rnn_params"]["noise_z_t0"] = "diag"
         else:
             vae_params["rnn_params"]["noise_z_t0"] = "scalar"
-
 
     if "readout_rates" in vae_params["rnn_params"]:
         vae_params["rnn_params"]["readout_from"] = vae_params["rnn_params"].pop(
@@ -179,9 +178,9 @@ def load_model(name, load_encoder=True):
             print("no out nonlinearity found, setting to identity")
             vae_params["rnn_params"]["out_nonlinearity"] = "identity"
     print(vae_params["rnn_params"]["out_nonlinearity"])
-    if "shared_tau" in vae_params['rnn_params']:
-        vae_params['rnn_params']['decay']= vae_params['rnn_params'].pop("shared_tau")
-    
+    if "shared_tau" in vae_params["rnn_params"]:
+        vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop("shared_tau")
+
     if training_params["loss_f"] == "VGTF":
         training_params["loss_f"] = "smc"
     elif training_params["loss_f"] == "bs_VGTF":
