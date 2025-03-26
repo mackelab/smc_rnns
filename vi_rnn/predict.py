@@ -154,8 +154,27 @@ def predict(
     verbose=False,
     sim_v=True,
     cut_off=0,
-):
+): 
+    """
+    Sample new data from the model
+    Args:
+        vae (VAE): trained VAE model
+        u (torch.tensor; batch_size x dim_u x dim_T): inputs
+        x (torch.tensor; batch_size x dim_x x dim_T): data
+        dur (int): duration of the simulation
+        initial_state (str): initial state of the model
+        observation_model (str): observation model
+        optimal_proposal (bool): whether to use the optimal proposal
+        sim_v (bool): whether to simulate the latent variables
+        cut_off (int): cut off for the inputs
+    Returns:
+        Z (np.array; batch_size x dim_z x dim_T): latent variables
+        data_gen (np.array; batch_size x dim_x x dim_T): generated data
+        rates (np.array; batch_size x dim_x x dim_T): rates underlying generated data
+    """
     with torch.no_grad():
+        if len(x.shape) == 2:
+            x = x.unsqueeze(0) # add trial dim if not used
         if u is None:
             u = torch.zeros(x.shape[0], 0, x.shape[2])
         if dur is None:

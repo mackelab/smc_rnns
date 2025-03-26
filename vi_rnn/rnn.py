@@ -33,10 +33,15 @@ class LRRNN(nn.Module):
         # Initialise noise
         # ------
 
-        # Observation noise (not used when using Poisson observations)
-        self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
-            params["noise_x"], self.d_x, params["init_noise_x"], params["train_noise_x"]
-        )
+        if "noise_x" in params.keys():
+            # Observation noise (not used when using Poisson observations)
+            self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
+                params["noise_x"], self.d_x, params["init_noise_x"], params["train_noise_x"]
+            )
+        else:
+            self.R_x = torch.zeros(self.d_x, self.d_x)
+            self.std_embed_x = lambda x: torch.diag(x)
+            self.var_embed_x = lambda x: x
 
         # Latent states transition noise
         self.R_z, self.std_embed_z, self.var_embed_z = init_noise(

@@ -32,7 +32,7 @@ class Basic_dataset(Dataset):
         if stim_eval is not None:
             self.stim_eval = torch.from_numpy(stim_eval)
         else:
-            self.stim_eval = self.stim
+            self.stim_eval = torch.zeros(0, self.data_eval.shape[1])
 
     def __len__(self):
         """Return number of trials in an epoch"""
