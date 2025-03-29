@@ -40,8 +40,8 @@ class LRRNN(nn.Module):
             )
         else:
             self.R_x = torch.zeros(self.d_x, self.d_x)
-            self.std_embed_x = lambda x: torch.diag(x)
-            self.var_embed_x = lambda x: x
+            self.std_embed_x = lambda x: torch.diag(x).to(device=self.R_z.device)
+            self.var_embed_x = lambda x: x.to(device=self.R_z.device)
 
         # Latent states transition noise
         self.R_z, self.std_embed_z, self.var_embed_z = init_noise(
@@ -195,24 +195,24 @@ class LRRNN(nn.Module):
             Z = []
             V = []
             if z0 is None:
-                z = torch.randn(1, self.d_z, 1, 1, device=self.R_x.device)
+                z = torch.randn(1, self.d_z, 1, 1, device=self.R_z.device)
 
             # set initial state
             else:
                 if z0.shape[0] == 1 or len(z0.shape) == 1:  # only z dimension is given
-                    z = z0.to(device=self.R_x.device).reshape(1, self.d_z, 1, 1)
+                    z = z0.to(device=self.R_z.device).reshape(1, self.d_z, 1, 1)
                 elif len(z0.shape) < 4:  # trial and z dimension is given
-                    z = z0.to(device=self.R_x.device).reshape(
+                    z = z0.to(device=self.R_z.device).reshape(
                         z0.shape[0], self.d_z, 1, 1
                     )
                 else:
-                    z = z0.to(device=self.R_x.device)
+                    z = z0.to(device=self.R_z.device)
 
             # run model with input
             if u is not None:
                 if len(u.shape) < 4:
                     u = u.unsqueeze(-1)  # add particle dim
-                v = torch.zeros(u.shape[0], self.d_u, 1, 1, device=self.R_x.device)
+                v = torch.zeros(u.shape[0], self.d_u, 1, 1, device=self.R_z.device)
                 for t in range(time_steps + cut_off):
 
                     z, v = self.forward(
