@@ -17,8 +17,8 @@ data_all = np.load("tutorial_data/spiking_data.npy")
 dim_x, seq_len = data_all.shape
 
 # split into train and eval
-data_train = data_all[:,:7500]
-data_eval = data_all[:,7500:]
+data_train = data_all[:,:75000]
+data_eval = data_all[:,75000:]
 
 
 # initialise a dataset class
@@ -36,7 +36,7 @@ dataset = Basic_dataset(
 
 enc_params = (
     {"kernel_sizes": [21, 11, 1], # kernel sizes of the CNN
-    "padding_mode": "circular", # padding mode of the CNN (e.g., "circular", "constant", "reflect")
+    "padding_mode": "constant", # padding mode of the CNN (e.g., "circular", "constant", "reflect")
     "nonlinearity": "gelu", # "leaky_relu" or "gelu"
     "n_channels": [64,64], # number of channels in the CNN (last one will be equal to dim_z)
     "init_scale": 0.1, # initial scale of the noise predicted by the encoder
@@ -85,7 +85,7 @@ VAE_params = {
 training_params = {
     "lr": 1e-3,  # learning rate start
     "lr_end": 1e-5,  # learning rate end (with exponential decay)
-    "n_epochs": 500,  # number of epochs to train
+    "n_epochs": 1500,  # number of epochs to train
     "grad_norm": 0,  # gradient clipping above certain norm (if this is set to >0)
     "batch_size": 16,  # batch size
     "cuda": False,  # train on GPU
@@ -106,7 +106,7 @@ train_VAE(
     vae,
     training_params,
     dataset,
-    sync_wandb=False,
+    sync_wandb=True,
     out_dir="tutorial_data",
     fname="tutorial_spikes",
 )
