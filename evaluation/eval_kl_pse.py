@@ -52,7 +52,7 @@ def eval_kl_pse(
             data = data.unsqueeze(0)
             u = u.unsqueeze(0)
         dur = min(data.shape[2], 10000)
-
+        data = data[:,:,:dur]
         _, data_gen, _ = predict(
             vae,
             u=u,

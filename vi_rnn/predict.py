@@ -154,6 +154,7 @@ def predict(
     verbose=False,
     sim_v=True,
     cut_off=0,
+    max_fr = 10000.
 ): 
     """
     Sample new data from the model
@@ -179,6 +180,8 @@ def predict(
             u = torch.zeros(x.shape[0], 0, x.shape[2])
         if dur is None:
             dur = u.shape[2]
+        else:
+            u=u[:,:,:dur]
         if cut_off > 0:
             u = torch.nn.functional.pad(u, (0, cut_off))
         if isinstance(initial_state, str):
@@ -217,7 +220,9 @@ def predict(
             )
 
         elif observation_model == "Poisson":
-            data_gen = np.random.poisson(rates).astype("float64")
+            rates = np.minimum(rates,max_fr)
+            np.nan_to_num(rates,nan=max_fr, copy=False)
+            data_gen = np.random.poisson(rates.astype("float64")).astype("float64")
 
         Z = Z.cpu().detach().numpy()[:, :, :, 0]
 

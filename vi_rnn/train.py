@@ -357,7 +357,7 @@ def train_VAE(
         # store to wandb
         print(fname + "_state_dict_enc.pkl")
         wandb.save(fname + "_state_dict_enc.pkl")
-        wandb.save(fname + "_state_dict_prior.pkl")
+        wandb.save(fname + "_state_dict_rnn.pkl")
         wandb.save(fname + "_vae_params.pkl")
         wandb.save(fname + "_task_params.pkl")
         wandb.save(fname + "_training_params.pkl")
