@@ -189,7 +189,6 @@ def train_VAE(
                         observation_model=observation_model,
                         optimal_proposal=optimal_proposal,
                         cut_off=0,
-                        verbose=True,
                         sim_v=training_params["sim_v"],
                     )
                     plt.figure()

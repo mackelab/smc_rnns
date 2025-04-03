@@ -62,7 +62,6 @@ def eval_kl_pse(
             observation_model=observation_model,
             optimal_proposal=optimal_proposal,
             cut_off=cut_off,
-            verbose=True,
             sim_v=sim_v,
         )
         data = data.permute(0, 2, 1).reshape(-1, vae.dim_x)
