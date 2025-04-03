@@ -50,7 +50,6 @@ def train_VAE(
         curr_epoch: int, epoch to start from (for restarting training)
         store_train_stats: Bool, store training statistics
     """
-
     stop_training = False  # not found any NANs yet
 
     # add losses to training_params dict (bit of a hack)
@@ -190,7 +189,6 @@ def train_VAE(
                         observation_model=observation_model,
                         optimal_proposal=optimal_proposal,
                         cut_off=0,
-                        verbose=True,
                         sim_v=training_params["sim_v"],
                     )
                     plt.figure()
@@ -357,7 +355,7 @@ def train_VAE(
         # store to wandb
         print(fname + "_state_dict_enc.pkl")
         wandb.save(fname + "_state_dict_enc.pkl")
-        wandb.save(fname + "_state_dict_prior.pkl")
+        wandb.save(fname + "_state_dict_rnn.pkl")
         wandb.save(fname + "_vae_params.pkl")
         wandb.save(fname + "_task_params.pkl")
         wandb.save(fname + "_training_params.pkl")

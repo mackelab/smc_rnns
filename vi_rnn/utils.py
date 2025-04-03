@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset
-from initialize_parameterize import chol_cov_embed, inverse_chol_cov_embed
+from initialize_parameterize import chol_cov_embed, inverse_chol_cov_embed,full_cov_embed
 
 
 def np_relu(x):
@@ -157,6 +157,8 @@ def orthogonalise_network(vae):
             inverse_chol_cov_embed(torch.linalg.cholesky(proj_chol @ proj_chol.T))
         )
         vae.rnn.params["noise_z"] = "full"
+        vae.rnn.std_embed_z = lambda x: torch.sqrt(torch.diagonal(full_cov_embed(x)))
+        vae.rnn.var_embed_z= lambda x: (full_cov_embed(x))
     return vae
 
 

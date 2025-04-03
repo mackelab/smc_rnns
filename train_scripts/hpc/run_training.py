@@ -10,7 +10,6 @@ from vi_rnn.datasets import Basic_dataset
 from pathlib import Path
 import wandb
 import torch
-import wandb
 
 sync_wandb = True  # whether to sync with wandb
 data_path = vi_rnn_dir + "/data_untracked/train_hpc2.npy"
@@ -26,15 +25,10 @@ cuda = True  # whether to use cuda
 
 # initialise encoder
 enc_params = {
-    "first_layer": 24,
     "init_kernel_sizes": [24, 11, 1],
-    "strides": [1, 1, 1],
-    "padding": "same",
     "padding_mode": "constant",
     "nonlinearity": "gelu",
-    "dilations": [1, 1, 1],
     "n_channels": [128, 64],
-    "n_hidden": 64,
     "init_scale": 0.1,
     "constant_var": False,
     "pading_location": "causal",
@@ -45,14 +39,11 @@ enc_params["init_kernel_sizes"] = [enc_params["first_layer"], 11, 1]
 
 # initialise prior
 rnn_params = {
-    "train_noise_x": False,  # False
     "train_noise_z": True,
     "train_noise_z_t0": True,
     "init_noise_z": 0.1,
     "init_noise_z_t0": 0.1,
-    "init_noise_x": 0.1,
     "noise_z": "diag",
-    "noise_x": "diag",
     "noise_z_t0": "diag",
     "identity_readout": False,
     "activation": "clipped_relu",
