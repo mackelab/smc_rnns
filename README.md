@@ -13,9 +13,11 @@ Create a conda environment:
 `conda enc create -f smc_rnn_env_mac.yml` (on Mac OS)
 
 
-and open:
-
- `tutorial/tutorial_continuous.ipynb`
+and open one of:
+```
+tutorial/tutorial_continuous.ipynb
+tutorial/tutorial_continuous.ipynbs
+```
 
 
 ### Finding fixed points

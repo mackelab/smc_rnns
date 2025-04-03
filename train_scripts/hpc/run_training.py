@@ -10,7 +10,6 @@ from vi_rnn.datasets import Basic_dataset
 from pathlib import Path
 import wandb
 import torch
-import wandb
 
 sync_wandb = True  # whether to sync with wandb
 data_path = vi_rnn_dir + "/data_untracked/train_hpc2.npy"
