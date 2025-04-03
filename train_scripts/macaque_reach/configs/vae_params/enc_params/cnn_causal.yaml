@@ -1,4 +1,4 @@
-init_kernel_sizes: [14, 4, 2]
+kernel_sizes: [14, 4, 2]
 nonlinearity: gelu
 n_channels: [128, 64]
 init_scale: .05

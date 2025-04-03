@@ -1,11 +1,8 @@
-train_noise_x: false
 train_noise_z: true
 train_noise_z_t0: true
 init_noise_z: .05
 init_noise_z_t0: 1
-init_noise_x: .1
 noise_z: "diag"
-noise_x: "diag"
 noise_z_t0: "diag"
 identity_readout: false
 activation: clipped_relu

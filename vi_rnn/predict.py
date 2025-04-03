@@ -151,7 +151,6 @@ def predict(
     initial_state="prior_sample",
     observation_model="Gauss",
     optimal_proposal=False,
-    verbose=False,
     sim_v=True,
     cut_off=0,
     max_fr = 10000.
@@ -168,6 +167,7 @@ def predict(
         optimal_proposal (bool): whether to use the optimal proposal
         sim_v (bool): whether to simulate the latent variables
         cut_off (int): cut off for the inputs
+        max_fr:
     Returns:
         Z (np.array; batch_size x dim_z x dim_T): latent variables
         data_gen (np.array; batch_size x dim_x x dim_T): generated data

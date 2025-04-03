@@ -50,7 +50,6 @@ def train_VAE(
         curr_epoch: int, epoch to start from (for restarting training)
         store_train_stats: Bool, store training statistics
     """
-    print("WANDB", sync_wandb)
     stop_training = False  # not found any NANs yet
 
     # add losses to training_params dict (bit of a hack)
