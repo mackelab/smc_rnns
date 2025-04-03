@@ -16,7 +16,7 @@ Create a conda environment:
 and open one of:
 ```
 tutorial/tutorial_continuous.ipynb
-tutorial/tutorial_continuous.ipynbs
+tutorial/tutorial_spikes.ipynb
 ```
 
 
