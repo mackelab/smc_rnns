@@ -194,7 +194,7 @@ def load_model(name, load_encoder=True):
     for key in list(d.keys()):
         d[key.replace("latent_step", "transition")] = d.pop(key)
     if "transition.AW" in list(d.keys()):
-        d["transition.decay"] = d.pop("transition.AW")
+        d["transition.decay_param"] = d.pop("transition.AW")
     for key in list(d.keys()):
         if key not in model.rnn.state_dict().keys():
             del d[key]

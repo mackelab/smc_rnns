@@ -7,52 +7,6 @@ file_dir = str(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(file_dir + "/..")
 
 
-class Inverse_Observation(nn.Module):
-    """
-    Invert the (linear) observation model to obtain e(z|x)
-    """
-
-    def __init__(self, dim_x, dim_z, params, inv_obs, scale=1e-5):
-        """
-        Args:
-            dim_x (int): dimensionality of the data
-            dim_z (int): dimensionality of the latent space
-            params (dict): dictionary of parameters
-            inv_obs (func): inverse observation model
-        """
-
-        super(Inverse_Observation, self).__init__()
-        self.dim_x = dim_x
-        self.dim_z = dim_z
-        self.params = params
-
-        self.logvar = nn.Parameter(2 * torch.log(torch.ones(self.dim_z) * scale))
-
-        self.mean = inv_obs
-
-    def forward(self, x, k=1):
-        """
-        Forward pass of the MLP encoder
-        Args:
-            x (torch.tensor; batch_size x dim_x x dim_T): data
-            k (int): number of particles to draw from the approximate posterior
-        Returns:
-            z (torch.tensor; batch_size x dim_z x dim_T x k): sampled latent variables
-            mean (torch.tensor; batch_size x dim_z x dim_T x k): mean of the approximate posterior
-            logvar (torch.tensor; batch_size x dim_z x dim_T x k): log variance of the approximate posterior
-            eps_sample (torch.tensor; batch_size x dim_z x dim_T x k): sample from the standard normal distribution
-        """
-
-        mean = self.mean(x).unsqueeze(-1).repeat(1, 1, 1, k)
-        logvar = (
-            self.logvar.unsqueeze(0)
-            .unsqueeze(-1)
-            .unsqueeze(-1)
-            .repeat(1, 1, mean.shape[2], k)
-        )
-
-        return mean, logvar
-
 
 class CNN_encoder(nn.Module):
     """

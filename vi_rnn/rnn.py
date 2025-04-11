@@ -281,35 +281,6 @@ class RNN(nn.Module):
         )
         return X
 
-    def inv_observation(self, X, grad=True):
-        """
-        Args:
-            X (torch.tensor; n_trials x dim_x x time_steps): observations
-            grad (bool): whether to allow autodiff through the inversion
-        Returns:
-            z (torch.tensor; n_trials x dim_z x time_steps): latent time series
-        """
-
-        if self.readout_from == "currents":
-            m = self.transition.m
-            Wu = self.transition.Wu
-            mW = torch.cat((m, Wu), dim=1)
-            B_inv = torch.linalg.pinv(
-                (self.observation.cast_B(self.observation.B).T @ mW).T
-            )[:, : self.d_z]
-        else:
-            B_inv = torch.linalg.pinv(self.observation.cast_B(self.observation.B))
-
-        if grad:
-            return torch.einsum(
-                "xz,bxT->bzT", (B_inv, X - self.observation.Bias.squeeze(-1))
-            )
-        else:
-            return torch.einsum(
-                "xz,bxT->bzT",
-                (B_inv.detach(), X - self.observation.Bias.squeeze(-1).detach()),
-            )
-
 
 class Observation(nn.Module):
     """
@@ -432,8 +403,7 @@ class Transition_LowRank(nn.Module):
             self.dnonlinearity = lambda x: torch.ones_like(x)
 
         # time constants
-        self.decay = nn.Parameter(torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay)))
-        self.cast_decay = lambda x: torch.exp(-torch.exp(x))
+        self.decay_param = nn.Parameter(torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay)))
 
         # bias of the neurons
         if nonlinearity == "clipped_relu":
@@ -461,8 +431,12 @@ class Transition_LowRank(nn.Module):
             )
         else:
             self.Wu = torch.zeros(hidden_dim, 0)
-
-    def forward(self, z, v=None):
+            
+    @property
+    def decay(self):
+        return torch.exp(-torch.exp(self.decay_param))
+    
+    def forward(self, z, v=0):
         """
         Latent RNN (internal) dynamics, one step forward
         Args:
@@ -471,36 +445,44 @@ class Transition_LowRank(nn.Module):
         Returns:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         """
-        A = self.cast_decay(self.decay)
         R = self.get_rates(z, v=v)
-        z = A * z + torch.einsum("zN,BNTK->BzTK", self.n, R)
+        z = self.decay * z + torch.einsum("zN,BNTK->BzTK", self.n, R)
         return z
 
     def step_input(self, v, u):
         """
         Latent RNN input dynamics, one step forward
         Args:
-            v (torch.tensor; n_trials x dim_u x time_steps x k): input filtered by RNN dynamics
-            u (torch.tensor; n_trials x dim_u x time_steps x k): raw input
+            v (torch.tensor; n_trials x dim_u x k): input filtered by RNN dynamics
+            u (torch.tensor; n_trials x dim_u x k): raw input
         Returns:
-            v (torch.tensor; n_trials x dim_u x time_steps x k): input filtered by RNN dynamics
+            v (torch.tensor; n_trials x dim_u x k): input filtered by RNN dynamics
         """
-        A = self.cast_decay(self.decay)
-        v = A * v + (1 - A) * u
+        v = self.decay * v + (1 - self.decay) * u
         return v
 
     def get_rates(self, z, v=0):
         """Transform latents to neuron activity
         Args:
+            z (torch.tensor; n_trials x dim_z x k): latent time series
+            v (torch.tensor; n_trials x dim_u x k): filtered input
+        Returns:
+            R (torch.tensor; n_trials x dim_N x k): neuron activity after nonlinearity"""
+        X = self.get_currents(z,v)
+        R = self.nonlinearity(X, self.h.view(1,-1,1))
+        return R
+    
+    def get_currents(self, z, v=0):
+        """Transform latents to neuron activity
+        Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
             v (torch.tensor; n_trials x dim_u x time_steps x k): filtered input
         Returns:
-            R (torch.tensor; n_trials x dim_N x time_steps x k): neuron activity"""
+            X (torch.tensor; n_trials x dim_N x time_steps x k): neuron activity before nonlinearity"""
         X = torch.einsum("Nz,BzTK->BNTK", self.m, z) + torch.einsum(
             "Nu,BuTK->BNTK", self.Wu, v
         )
-        R = self.nonlinearity(X, self.h.unsqueeze(0).unsqueeze(2).unsqueeze(3))
-        return R
+        return X
 
 
 class Transition_FullRank(nn.Module):
@@ -552,8 +534,7 @@ class Transition_FullRank(nn.Module):
             self.dnonlinearity = lambda x: torch.ones_like(x)
 
         # time constants
-        self.decay = nn.Parameter(torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay)))
-        self.cast_decay = lambda x: torch.exp(-torch.exp(x))
+        self.decay_param = nn.Parameter(torch.log(-torch.log(torch.ones(1, 1, 1, 1) * decay)))
 
         # bias of the neurons
         if nonlinearity == "clipped_relu":
@@ -569,6 +550,11 @@ class Transition_FullRank(nn.Module):
             self.Wu = nn.Parameter(uniform_init2d(dz, self.du), requires_grad=True)
         else:
             self.Wu = torch.zeros(dz, 0)
+    
+    @property
+    def decay(self):
+        return torch.exp(-torch.exp(self.decay_param))
+
 
     def forward(self, z, v=0):
         """
@@ -580,7 +566,7 @@ class Transition_FullRank(nn.Module):
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         """
         A = self.cast_decay(self.decay)
-        z = A * z + (1 - A) * (
+        z = self.decay * z + (1 - self.decay) * (
             torch.einsum(
                 "zN,BNTK->BzTK",
                 self.W,
