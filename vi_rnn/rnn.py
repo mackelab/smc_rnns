@@ -5,7 +5,7 @@ from initialize_parameterize import *
 from torch.nn.utils.parametrizations import orthogonal
 
 
-class LRRNN(nn.Module):
+class RNN(nn.Module):
     """
     Low-rank RNN
     Code inspired by https://github.com/DurstewitzLab/dendPLRNN
@@ -21,7 +21,7 @@ class LRRNN(nn.Module):
             params (dict): dictionary of parameters
         """
 
-        super(LRRNN, self).__init__()
+        super(RNN, self).__init__()
         self.d_x = dim_x
         self.d_z = dim_z
         self.d_u = dim_u
@@ -70,7 +70,7 @@ class LRRNN(nn.Module):
                 train_neuron_bias=params["train_neuron_bias"],
             )
         else:
-            self.transition = Transition(
+            self.transition = Transition_LowRank(
                 self.d_z,
                 self.d_u,
                 self.d_N,
@@ -382,7 +382,7 @@ class Observation(nn.Module):
         )
 
 
-class Transition(nn.Module):
+class Transition_LowRank(nn.Module):
     """
     Latent dynamics of the prior, parameterised by a low-rank RNN
     """
@@ -407,7 +407,7 @@ class Transition(nn.Module):
             train_latent_bias (bool): whether to train the bias of the latents (z)
             train_neuron_bias (bool): whether to train the bias of the neurons (x)
         """
-        super(Transition, self).__init__()
+        super(Transition_LowRank, self).__init__()
         self.dz = dz
         self.du = du
 

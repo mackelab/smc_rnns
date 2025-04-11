@@ -5,7 +5,7 @@ file_dir = os.path.dirname(__file__)
 sys.path.append(file_dir)
 
 from encoders import Inverse_Observation, CNN_encoder
-from vi_rnn.rnn import LRRNN
+from vi_rnn.rnn import RNN
 import torch.nn as nn
 import torch
 import numpy as np
@@ -39,8 +39,8 @@ class VAE(nn.Module):
         self.dim_z = vae_params["dim_z"]
         self.dim_N = vae_params["dim_N"]
         self.vae_params = vae_params
-        if vae_params["rnn_architecture"] == "LRRNN":
-            self.rnn = LRRNN(
+        if vae_params["rnn_architecture"] == "RNN":
+            self.rnn = RNN(
                 self.dim_x_hat,
                 self.dim_z,
                 self.dim_u,
