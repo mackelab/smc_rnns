@@ -289,8 +289,13 @@ class VAE(nn.Module):
             # Calculate the log weights
             log_w = ll_x + ll_pz - ll_qz
 
-            #also has analytic expression: https://www.ecmwf.int/sites/default/files/elibrary/2012/76468-particle-filters-optimal-proposal-and-high-dimensional-systems_0.pdf
-            
+            # weights also have analytic expression: https://www.ecmwf.int/sites/default/files/elibrary/2012/76468-particle-filters-optimal-proposal-and-high-dimensional-systems_0.pdf
+            # w_mean = torch.einsum("zx, bzk -> bxk", B, prior_mean) + Obs_bias + v_to_X
+            # w_upd =  torch.einsum("zx, zs, sy -> xy", B, eff_var_prior, B)+torch.diag(eff_var_x)
+            # w_chol = torch.linalg.cholesky(w_upd)
+            # w_dist = torch.distributions.MultivariateNormal(loc=w_mean.permute(0, 2, 1), scale_tril=w_chol#)
+            # ll_w = w_dist.log_prob(x[:, :, t].permute(0, 2, 1))
+        
             # Store some quantities
             ll_xsum = torch.logsumexp(ll_x.detach(), axis=-1) - np.log(k)
             ll_pzsum = torch.logsumexp(ll_pz.detach(), axis=-1) - np.log(k)
