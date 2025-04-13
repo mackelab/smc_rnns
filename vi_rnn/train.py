@@ -337,7 +337,6 @@ def train_VAE(
                     "alpha": alpha,
                     "noise_z": noise_z.mean().item(),
                     "noise_x": noise_x.mean().item(),
-                    "noise_e": torch.exp(vae.encoder.logvar / 2).mean().item(),
                 }
             )
 

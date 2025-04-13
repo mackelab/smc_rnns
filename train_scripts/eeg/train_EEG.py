@@ -49,7 +49,6 @@ dim_x = task.data.shape[0]
 # ------------------
 for _ in range(n_runs):
     # initialise encoder
-    enc_params = {}
 
     # initialise prior
     rnn_params = {
@@ -62,7 +61,8 @@ for _ in range(n_runs):
         "noise_z": "full",
         "noise_x": "diag",
         "noise_z_t0": "full",
-        "identity_readout": False,
+        "observation": "affine",
+        "transition":"low_rank",
         "activation": "clipped_relu",
         "decay": 0.9,
         "readout_from": "z",
@@ -71,7 +71,7 @@ for _ in range(n_runs):
         "train_neuron_bias": True,
         "weight_dist": "uniform",
         "initial_state": "trainable",
-        "out_nonlinearity": "identity",
+        "obs_nonlinearity": "identity",
     }
 
     training_params = {
@@ -95,9 +95,6 @@ for _ in range(n_runs):
         "dim_x": dim_x,
         "dim_z": dim_z,
         "dim_N": dim_N,
-        "enc_architecture": "Inv_Obs",
-        "enc_params": enc_params,
-        "rnn_architecture": "LRRNN",
         "rnn_params": rnn_params,
     }
 

@@ -82,11 +82,12 @@ class RNN(nn.Module):
             raise ValueError("transition not recognised, use low_rank or full_rank")
         # initialise the observation step
         # ---------
+        self.readout_from = params["readout_from"]
 
         if params["observation"]=="one_to_one":
-            if params["readout_from"] == "rates":
+            if self.readout_from  == "rates":
                 z_to_x_func=self.transition.get_rates
-            elif params["readout_from"] =="currents":
+            elif self.readout_from  =="currents":
                 z_to_x_func=self.transition.get_currents       
             else:
                 raise ValueError("readout_from not recognised, use rates, currents (for a one_to_one obervation model)")
@@ -115,7 +116,6 @@ class RNN(nn.Module):
                     obs_nonlinearity=params["obs_nonlinearity"]
                 )
       
-        self.readout_from = params["readout_from"]
 
         # initialise the initial state
         # ---------
@@ -291,7 +291,7 @@ class One_to_One_observation(nn.Module):
     ):
         """
         Args:
-            dx (int): dimensionality of the data
+            d_x (int): dimensionality of the data
             z_to_x_func: maps latents to RNN unit space
             train_bias (bool): whether to train the bias
             train_weights (bool): whether to train the weights
@@ -343,34 +343,34 @@ class Affine_observation(nn.Module):
     """
     def __init__(
         self,
-        dx,
-        dz,
-        dv=0,
+        d_x,
+        d_z,
+        d_v=0,
         train_bias=True,
         train_weights=True,
         obs_nonlinearity = "identity"
     ):
         """
         Args:
-            dx (int): dimensionality of the data
-            dz (int): dimensionality of the latents
-            dv (int): dimensionality of the input
+            d_x (int): dimensionality of the data
+            d_z (int): dimensionality of the latents
+            d_v (int): dimensionality of the input
             train_bias (bool): whether to train the bias
             train_weights (bool): whether to train the weights
             obs_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
         """
         super(Affine_observation, self).__init__()
-        self.dx = dx
-        self.dz= dz
-        self.dv = dv
+        self.d_x = d_x
+        self.d_z= d_z
+        self.d_v = d_v
 
         self.B = nn.Parameter(
-            np.sqrt(2 / (self.dz+self.dv)) * torch.randn(self.dz+self.dv, self.dx),
+            np.sqrt(2 / (self.d_z+self.d_v)) * torch.randn(self.d_z+self.d_v, self.d_x),
             requires_grad=train_weights,
         )
 
         self.Bias = nn.Parameter(
-            torch.zeros(self.dx), requires_grad=train_bias
+            torch.zeros(self.d_x), requires_grad=train_bias
         )
 
         # for Poisson we need to rectify outputs to be positive
@@ -390,7 +390,7 @@ class Affine_observation(nn.Module):
             )
         
         # readout from z_and_v
-        if self.dv>0:
+        if self.d_v>0:
             self.cat_zv =  lambda z, v:  torch.concat([(v.repeat(*([1]*len(v.shape[:-1])), z.shape[-1])),z],dim=1)
         # or just z
         else:

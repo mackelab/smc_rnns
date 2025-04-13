@@ -95,7 +95,7 @@ def get_initial_state(
                 Q_dist = torch.distributions.MultivariateNormal(
                     loc=mean_Q.permute(0, 2, 1), scale_tril=var_Q_cholesky
                 )
-                z0 = Q_dist.sample()
+                z0 = Q_dist.sample().permute(0, 2, 1)
 
             elif initial_state == "posterior_mean":
                 z0 = mean_Q

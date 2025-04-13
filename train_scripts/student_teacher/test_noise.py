@@ -49,7 +49,6 @@ task_params = {
 
 
 # initialise encoder
-enc_params = {"obs_grad": True, "init_scale": 0.1}
 dim_z = 2
 dim_N = task_params["n_neurons"]
 dim_x = task_params["n_neurons"]
@@ -64,7 +63,8 @@ rnn_params = {
     "noise_z": "full",
     "noise_x": "diag",
     "noise_z_t0": "full",
-    "identity_readout": True,
+    "observation": "one_to_one",
+    "transition": "low_rank",
     "activation": "relu",
     "decay": 0.7,
     "readout_from": task_params["out"],
@@ -72,9 +72,8 @@ rnn_params = {
     "train_obs_weights": False,
     "train_neuron_bias": True,
     "weight_dist": "uniform",
-    "weight_scaler": 1,  # /dim_N,
     "initial_state": "trainable",
-    "out_nonlinearity": "identity",
+    "obs_nonlinearity": "identity",
 }
 
 
@@ -100,9 +99,6 @@ VAE_params = {
     "dim_x": dim_x,
     "dim_z": dim_z,
     "dim_N": dim_N,
-    "enc_architecture": "Inv_Obs",
-    "enc_params": enc_params,
-    "rnn_architecture": "LRRNN",
     "rnn_params": rnn_params,
 }
 for i in range(n_repeats):
