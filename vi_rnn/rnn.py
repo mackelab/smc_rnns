@@ -83,29 +83,39 @@ class RNN(nn.Module):
         # initialise the observation step
         # ---------
 
+        if params["observation"]=="one_to_one":
+            if params["readout_from"] == "rates":
+                z_to_x_func=self.transition.get_rates
+            elif params["readout_from"] =="currents":
+                z_to_x_func=self.transition.get_currents       
+            else:
+                raise ValueError("readout_from not recognised, use rates, currents (for a one_to_one obervation model)")
+            self.observation = One_to_One_observation(
+                    d_x=self.d_x,
+                    z_to_x_func =z_to_x_func,
+                    train_bias=params["train_obs_bias"],
+                    train_weights=params["train_obs_weights"],
+                    obs_nonlinearity=params["obs_nonlinearity"]
+                )
+        elif params["observation"]=="affine":
+            if self.readout_from == "z_and_v":
+                d_v=self.d_u
+            elif self.readout_from == "z":
+                d_v=0
+            else:
+                raise ValueError(
+                    "readout_from not recognised, use z_and_v, or z (for an affine observation model)"
+                )
+            self.observation = Affine_observation(
+                    d_x=self.d_x,
+                    d_z = self.d_z,
+                    d_v = d_v,
+                    train_bias=params["train_obs_bias"],
+                    train_weights=params["train_obs_weights"],
+                    obs_nonlinearity=params["obs_nonlinearity"]
+                )
+      
         self.readout_from = params["readout_from"]
-
-        # initialise the observation step, either readout from the latent states (+ potentially input dynamics)
-        # or from the neuron activity
-        if self.readout_from == "rates" or self.readout_from == "currents":
-            out_dim = self.d_N  # readout from N-dim neuron activity
-        elif self.readout_from == "z_and_v":
-            out_dim = self.d_z + self.d_u  # readout from latents and inputs
-        elif self.readout_from == "z":
-            out_dim = self.d_z  # readout from latents
-        else:
-            raise ValueError(
-                "readout_from not recognised, use rates, currents, z_and_v, or z"
-            )
-
-        self.observation = Observation(
-            out_dim,
-            self.d_x,
-            train_bias=params["train_obs_bias"],
-            train_weights=params["train_obs_weights"],
-            identity_readout=params["identity_readout"],
-            out_nonlinearity=params["out_nonlinearity"],
-        )
 
         # initialise the initial state
         # ---------
@@ -258,22 +268,7 @@ class RNN(nn.Module):
         Returns:
             X (torch.tensor; n_trials x dim_x x time_steps x k): observations
         """
-        if self.readout_from == "rates":
-            R = self.get_rates(z, u=v)
-        elif self.readout_from == "currents":
-            m = self.transition.m
-            if v is not None:
-                Wu = self.transition.Wu
-                R = torch.einsum("Nz,Bz...->BN...", m, z) + torch.einsum(
-                    "Nz,Bz...->BN...", Wu, v
-                )
-            else:
-                R = torch.einsum("Nz,Bz...->BN...", m, z)
-        elif self.readout_from == "z_and_v":
-            R = torch.concat((z, v.repeat(1, 1, z.shape[-1])), dim=1)
-        else:
-            R = z
-        X = self.observation(R)
+        X = self.observation(z,v)
     
         X += (
             noise_scale
@@ -282,76 +277,136 @@ class RNN(nn.Module):
         )
         return X
 
-
-class Observation(nn.Module):
+class One_to_One_observation(nn.Module):
     """
-    Readout from the latent states or the neuron activity
+    Readout from the the activity of neurons in the network
     """
-
     def __init__(
         self,
-        dy,
-        dx,
+        d_x,
+        z_to_x_func,
         train_bias=True,
         train_weights=True,
-        identity_readout=False,
-        out_nonlinearity="identity",
+        obs_nonlinearity="identity",
     ):
         """
         Args:
-            dy (int): dimensionality of the input to the readout (can be N, d_z, or d_z+d_u, depending on the readout_from)
             dx (int): dimensionality of the data
+            z_to_x_func: maps latents to RNN unit space
             train_bias (bool): whether to train the bias
             train_weights (bool): whether to train the weights
-            identity_readout (bool): whether to use the identity matrix as the readout matrix,
-                                     - set to True if a one-to-one mapping between observed and
-                                     RNN units is desired!
-            out_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
+            abs_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
         """
-        super(Observation, self).__init__()
-        self.dy = dy
-        self.dx = dx
+        super(One_to_One_observation, self).__init__()
+        self.d_x =d_x
+        self.z_to_x_func = z_to_x_func 
+        self.B = nn.Parameter(
+            torch.ones(self.d_x),
+            requires_grad=train_weights,
+        )
 
-        if identity_readout:
-            B = torch.zeros(self.dy, self.dx)
-            B[range(self.dx), range(self.dx)] = 1
-            self.B = nn.Parameter(B, requires_grad=train_weights)
-            self.mask = B
-            self.cast_B = lambda x: x * self.mask
+        self.Bias = nn.Parameter(
+            torch.zeros(self.d_x), requires_grad=train_bias
+        )
+
+        # for Poisson we need to rectify outputs to be positive
+        if obs_nonlinearity == "exp":
+            exp = torch.exp
+            self.nonlinearity = lambda x: exp(x) + 1e-10
+        elif obs_nonlinearity == "relu":
+            self.nonlinearity = lambda x: torch.relu(x) + 1e-10
+        elif obs_nonlinearity == "softplus":
+            sp = torch.nn.functional.softplus
+            self.nonlinearity = lambda x: sp(x) + 1e-6
+        elif obs_nonlinearity == "identity":
+            self.nonlinearity = lambda x: x
         else:
-            self.B = nn.Parameter(
-                np.sqrt(2 / dy) * torch.randn(self.dy, self.dx),
-                requires_grad=train_weights,
-            )
-            self.cast_B = lambda x: x
-            self.mask = torch.ones(1)
+            raise ValueError(
+                "obs_nonlinearity not recognised, use exp, relu, softplus, or identity"
+            )    
+
+    def forward(self, z, v):
+        """
+        Args:
+            z (torch.tensor; n_trials x dim_z x k): latent time series
+        Returns:
+            X (torch.tensor; n_trials x dim_x x k): observations
+        """
+        x = self.z_to_x_func(z,v)
+        bias = self.Bias.view(1,-1,*([1]*len(z.shape[2:])))
+        B = self.B.view(1,-1,*([1]*len(z.shape[2:])))
+        return self.nonlinearity(B*x+bias)
+    
+class Affine_observation(nn.Module):
+    """
+    Readout from the latent states
+    """
+    def __init__(
+        self,
+        dx,
+        dz,
+        dv=0,
+        train_bias=True,
+        train_weights=True,
+        obs_nonlinearity = "identity"
+    ):
+        """
+        Args:
+            dx (int): dimensionality of the data
+            dz (int): dimensionality of the latents
+            dv (int): dimensionality of the input
+            train_bias (bool): whether to train the bias
+            train_weights (bool): whether to train the weights
+            obs_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
+        """
+        super(Affine_observation, self).__init__()
+        self.dx = dx
+        self.dz= dz
+        self.dv = dv
+
+        self.B = nn.Parameter(
+            np.sqrt(2 / (self.dz+self.dv)) * torch.randn(self.dz+self.dv, self.dx),
+            requires_grad=train_weights,
+        )
 
         self.Bias = nn.Parameter(
             torch.zeros(self.dx), requires_grad=train_bias
         )
 
         # for Poisson we need to rectify outputs to be positive
-        if out_nonlinearity == "exp":
+        if obs_nonlinearity == "exp":
             exp = torch.exp
             self.nonlinearity = lambda x: exp(x) + 1e-10
-        elif out_nonlinearity == "relu":
+        elif obs_nonlinearity == "relu":
             self.nonlinearity = lambda x: torch.relu(x) + 1e-10
-        elif out_nonlinearity == "softplus":
+        elif obs_nonlinearity == "softplus":
             sp = torch.nn.functional.softplus
             self.nonlinearity = lambda x: sp(x) + 1e-6
-        elif out_nonlinearity == "identity":
+        elif obs_nonlinearity == "identity":
             self.nonlinearity = lambda x: x
-
-    def forward(self, z):
+        else:
+            raise ValueError(
+                "obs_nonlinearity not recognised, use exp, relu, softplus, or identity"
+            )
+        
+        # readout from z_and_v
+        if self.dv>0:
+            self.cat_zv =  lambda z, v:  torch.concat([(v.repeat(*([1]*len(v.shape[:-1])), z.shape[-1])),z],dim=1)
+        # or just z
+        else:
+            self.cat_zv = lambda z, v : z
+        
+    def forward(self, z, v):
         """
         Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         Returns:
             X (torch.tensor; n_trials x dim_x x time_steps x k): observations
         """
+        zv = self.cat_zv(z,v)
         bias = self.Bias.view(1,-1,*([1]*len(z.shape[2:])))
         return self.nonlinearity(
-            torch.einsum("zx,bz...->bx...", (self.cast_B(self.B), z))+bias
+            torch.einsum("zx,bz...->bx...", (self.B, zv))+bias
         )
 
 

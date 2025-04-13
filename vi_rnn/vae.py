@@ -50,6 +50,9 @@ class VAE(nn.Module):
         if "enc_architecture" in vae_params:
             if vae_params["enc_architecture"] == "CNN":
                 self.encoder = CNN_encoder(self.dim_x, self.dim_z, vae_params["enc_params"])
+            else:
+                print("Warning: encoder not recognised, continuing without encoder")
+                self.has_encoder = False
         else:
             print("Loading VAE without encoder")
             self.has_encoder = False
@@ -119,10 +122,10 @@ class VAE(nn.Module):
         # Get the observation weights and bias
         if self.rnn.params["readout_from"] == "currents":
             m = self.rnn.transition.m
-            B = self.rnn.observation.cast_B(self.rnn.observation.B).T @ m
+            B = self.rnn.observation.B.unsqueeze(-1) * m
             B = B.T
         else:
-            B = self.rnn.observation.cast_B(self.rnn.observation.B)
+            B = self.rnn.observation.B
         Obs_bias = self.rnn.observation.Bias.view(1,-1,1)
 
         # Calculate the Kalman gain and interpolation alpha
@@ -786,7 +789,6 @@ class VAE(nn.Module):
         self.rnn.to(device=device)
         self.rnn.normal.loc = self.rnn.normal.loc.to(device=device)
         self.rnn.normal.scale = self.rnn.normal.scale.to(device=device)
-        self.rnn.observation.mask = self.rnn.observation.mask.to(device=device)
         self.rnn.transition.Wu = self.rnn.transition.Wu.to(device=device)
         if self.has_encoder:
             self.encoder.to(device=device)

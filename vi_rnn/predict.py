@@ -44,10 +44,10 @@ def get_initial_state(
             # Get the observation weights and bias
             if vae.rnn.params["readout_from"] == "currents":
                 m = vae.rnn.transition.m
-                B = vae.rnn.observation.cast_B(vae.rnn.observation.B).T @ m
+                B = vae.rnn.observation.B.unsqueeze(-1) * m
                 B = B.T
             else:
-                B = vae.rnn.observation.cast_B(vae.rnn.observation.B)
+                B = vae.rnn.observation.B
             Obs_bias = vae.rnn.observation.Bias.view(1,-1,1)
 
             # Calculate the Kalman gain and interpolation alpha

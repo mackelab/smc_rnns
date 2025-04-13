@@ -94,6 +94,7 @@ def load_model(name, load_encoder=True, backward_compat=False):
         task_params = CPU_Unpickler(f).load()
     with open(training_params_file, "rb") as f:
         training_params = CPU_Unpickler(f).load()
+    
     if backward_compat:
         # Backwards compatibility
         if "prior_params" in vae_params:
@@ -163,6 +164,11 @@ def load_model(name, load_encoder=True, backward_compat=False):
         else:
             vae_params["rnn_params"]["readout_from"] = "z"
 
+        if vae_params["rnn_params"]["identity_readout"]:
+            vae_params["rnn_params"]["observation"] = "one_to_one"
+        elif "observation" not in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["observation"] = "affine"
+
         if (
             vae_params["rnn_params"]["activation"] == "relu"
             and "clipped" in vae_params["rnn_params"]
@@ -172,12 +178,14 @@ def load_model(name, load_encoder=True, backward_compat=False):
 
         if "out_nonlinearity" not in vae_params["rnn_params"]:
             if training_params["observation_likelihood"] == "Gauss":
-                vae_params["rnn_params"]["out_nonlinearity"] = "identity"
+                vae_params["rnn_params"]["obs_nonlinearity"] = "identity"
             elif "obs_rectify" in vae_params:
-                vae_params["rnn_params"]["out_nonlinearity"] = vae_params.pop("obs_rectify")
+                vae_params["rnn_params"]["obs_nonlinearity"] = vae_params.pop("obs_rectify")
             else:
                 print("no out nonlinearity found, setting to identity")
-                vae_params["rnn_params"]["out_nonlinearity"] = "identity"
+                vae_params["rnn_params"]["obs_nonlinearity"] = "identity"
+        else:
+            vae_params["rnn_params"]["obs_nonlinearity"]=vae_params["rnn_params"].pop("out_nonlinearity")
         if "shared_tau" in vae_params["rnn_params"]:
             vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop("shared_tau")
 
@@ -189,8 +197,8 @@ def load_model(name, load_encoder=True, backward_compat=False):
             training_params["loss_f"] = "opt_smc"
  
     model = VAE(vae_params)
+
     d = torch.load(state_dict_file_rnn, map_location=torch.device("cpu"))
-    
     if backward_compat:
         # More backwards compatibility
         for key in list(d.keys()):
@@ -202,10 +210,14 @@ def load_model(name, load_encoder=True, backward_compat=False):
         d["transition.decay_param"]=d["transition.decay_param"].view(1)
         if len(d["observation.Bias"].shape)>1:
             d["observation.Bias"]=d["observation.Bias"].view(d["observation.Bias"].shape[1])
+        if vae_params["rnn_params"]["observation"] == "one_to_one" and len(d["observation.B"].shape)>1:
+            d["observation.B"] = torch.diagonal(d["observation.B"])
+
         for key in list(d.keys()):
             if key not in model.rnn.state_dict().keys():
                 del d[key]
                 print("key " + key + " not found in rnn, deleted")
+                
     model.rnn.load_state_dict(d)
     
     if model.has_encoder and load_encoder:
