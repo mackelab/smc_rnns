@@ -4,7 +4,7 @@ import sys
 file_dir = os.path.dirname(__file__)
 sys.path.append(file_dir)
 
-from encoders import Inverse_Observation, CNN_encoder
+from encoders import CNN_encoder
 from vi_rnn.rnn import RNN
 import torch.nn as nn
 import torch
@@ -39,37 +39,18 @@ class VAE(nn.Module):
         self.dim_z = vae_params["dim_z"]
         self.dim_N = vae_params["dim_N"]
         self.vae_params = vae_params
-        if vae_params["rnn_architecture"] == "RNN":
-            self.rnn = RNN(
-                self.dim_x_hat,
-                self.dim_z,
-                self.dim_u,
-                self.dim_N,
-                vae_params["rnn_params"],
-            )
-        else:
-            print("WARNING: prior does not exist")
-
+        self.rnn = RNN(
+            self.dim_x_hat,
+            self.dim_z,
+            self.dim_u,
+            self.dim_N,
+            vae_params["rnn_params"],
+        )
         self.has_encoder = True
         if vae_params["enc_architecture"] == "CNN":
             self.encoder = CNN_encoder(self.dim_x, self.dim_z, vae_params["enc_params"])
-        elif vae_params["enc_architecture"] == "Inv_Obs":
-            self.encoder = Inverse_Observation(
-                self.dim_x,
-                self.dim_z,
-                vae_params["enc_params"],
-                self.rnn.inv_observation,
-            )
-        elif vae_params["enc_architecture"] == "None":
-            self.has_encoder = False
-            self.encoder = lambda x: (
-                torch.zeros_like(x),
-                self.rnn.inv_observation(x),
-                torch.zeros_like(x),
-            )
-        else:
-            print("WARNING: no encoder")
-            self.has_encoder = False
+        print("Loading VAE without encoder")
+        self.has_encoder = False
 
         self.min_var = 1e-6
         self.max_var = 100
@@ -120,19 +101,17 @@ class VAE(nn.Module):
         # Get the initial prior mean
         if sim_v:
             prior_mean = (
-                self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0]))
-                .unsqueeze(2)
+                self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0])).unsqueeze(2)
                 .expand(batch_size, self.dim_z, k)
             )
-            v = torch.zeros(batch_size, self.dim_u, 1, 1, device=x.device)
+            v = torch.zeros(batch_size, self.dim_u, 1, device=x.device)
 
         else:  # initialise in the affine subspace corresponding to the input
             prior_mean = (
-                self.rnn.get_initial_state(u[:, :, 0])
-                .unsqueeze(2)
+                self.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)
                 .expand(batch_size, self.dim_z, k)
             )  # BS,Dz,K
-            v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)  # add particle dimension
+            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
 
         x = x.unsqueeze(-1)  # add particle dimension
 
@@ -264,13 +243,12 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Get the prior mean
-            prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=v).squeeze(2)
-
+            prior_mean = self.rnn.transition(Qz, v=v)
             # progress input dynamics
             if sim_v:
-                v = self.rnn.transition.step_input(v, u[:, :, t - 1].unsqueeze(2))
+                v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
-                v = u[:, :, t].unsqueeze(2)
+                v = u[:, :, t]
             # Calculate the Kalman gain and interpolation alpha
 
             # Calculate the posterior mean and Joseph stabilised covariance
@@ -282,7 +260,6 @@ class VAE(nn.Module):
                 v_to_X = 0
 
             x_t = x[:, :, t] - Obs_bias - v_to_X
-
             mean_Q = torch.einsum(
                 "zs,BsK->BzK", one_min_alpha, prior_mean
             ) + torch.einsum("zx,BxK->BzK", Kalman_gain, x_t)
@@ -293,6 +270,7 @@ class VAE(nn.Module):
             )
             Qz = Q_dist.rsample()
             ll_qz = Q_dist.log_prob(Qz)
+            
             # Calculate likelihood under the prior
             pz_dist = torch.distributions.MultivariateNormal(
                 loc=prior_mean.permute(0, 2, 1), scale_tril=eff_var_prior_chol
@@ -310,6 +288,9 @@ class VAE(nn.Module):
 
             # Calculate the log weights
             log_w = ll_x + ll_pz - ll_qz
+
+            #also has analytic expression: https://www.ecmwf.int/sites/default/files/elibrary/2012/76468-particle-filters-optimal-proposal-and-high-dimensional-systems_0.pdf
+            
             # Store some quantities
             ll_xsum = torch.logsumexp(ll_x.detach(), axis=-1) - np.log(k)
             ll_pzsum = torch.logsumexp(ll_pz.detach(), axis=-1) - np.log(k)
@@ -484,9 +465,8 @@ class VAE(nn.Module):
         )
 
         # Get the observation mean and calculate likelihood of the data
-        mean_x = self.rnn.get_observation(Qz.unsqueeze(-2), noise_scale=0, v=v).squeeze(
-            -2
-        )
+        mean_x = self.rnn.get_observation(Qz, noise_scale=0, v=v)
+
         ll_x = ll_x_func(x_hat[:, :, 0], mean_x, eff_std_x)
 
         # Calculate the log weights
@@ -520,11 +500,11 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Get the prior mean
-            prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=v).squeeze(2)
+            prior_mean = self.rnn.transition(Qz, v=v)
             if sim_v:
-                v = self.rnn.transition.step_input(v, u[:, :, t - 1].unsqueeze(2))
+                v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
-                v = u[:, :, t].unsqueeze(2)
+                v = u[:, :, t]
 
             # Calculate the posterior mean and covariance
             precZ = 1 / eff_var_prior
@@ -580,11 +560,11 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Here prior and posterior are the same and we just need the likelihood of the data
-            prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=v).squeeze(2)
+            prior_mean = self.rnn.transition(Qz, v=v).squeeze(2)
             if sim_v:
-                v = self.rnn.transition.step_input(v, u[:, :, t - 1].unsqueeze(2))
+                v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
-                v = u[:, :, t].unsqueeze(2)
+                v = u[:, :, t]
 
             # Sample from the posterior and calculate likelihood
             Q_dist = torch.distributions.Normal(
@@ -758,11 +738,11 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Get the prior mean
-            prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=v).squeeze(2)
+            prior_mean = self.rnn.transition(Qz, v=v)
             if sim_v:
-                v = self.rnn.transition.step_input(v, u[:, :, t - 1].unsqueeze(2))
+                v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
-                v = u[:, :, t].unsqueeze(2)
+                v = u[:, :, t]
 
             # Sample from the posterior and calculate likelihood
             Q_dist = torch.distributions.Normal(loc=prior_mean, scale=eff_std_prior)
@@ -805,7 +785,8 @@ class VAE(nn.Module):
         self.rnn.normal.scale = self.rnn.normal.scale.to(device=device)
         self.rnn.observation.mask = self.rnn.observation.mask.to(device=device)
         self.rnn.transition.Wu = self.rnn.transition.Wu.to(device=device)
-        self.encoder.to(device=device)
+        if self.has_encoder:
+            self.encoder.to(device=device)
 
     def posterior(
         self,
@@ -903,18 +884,16 @@ class VAE(nn.Module):
         # Get the initial prior mean
         if sim_v:
             prior_mean = (
-                self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0]))
-                .unsqueeze(2)
+                self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0])).unsqueeze(2)
                 .expand(bs, self.dim_z, k)
             )
-            v = torch.zeros(bs, self.dim_u, 1, 1, device=x.device)
+            v = torch.zeros(bs, self.dim_u, 1, device=x.device)
         else:  # initialise in the affine subspace corresponding to the input
             prior_mean = (
-                self.rnn.get_initial_state(u[:, :, 0])
-                .unsqueeze(2)
+                self.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)
                 .expand(bs, self.dim_z, k)
             )  # BS,Dz,K
-            v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)  # add particle dimension
+            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
 
         # get the posterior mean and covariance
         precZ = 1 / eff_var_prior_t0
@@ -971,13 +950,13 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Get the prior mean
-            prior_mean = self.rnn.transition(Qz.unsqueeze(-2), v=v)
-            prior_mean = prior_mean.squeeze(-2)
+            prior_mean = self.rnn.transition(Qz, v=v)
+            prior_mean = prior_mean
             if sim_v:
-                v = self.rnn.transition.step_input(v, u[:, :, t - 1].unsqueeze(2))
+                v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
-                v = u[:, :, t].unsqueeze(2)
-            vs.append(v.squeeze(2))
+                v = u[:, :, t]
+            vs.append(v)
 
             # Calculate the posterior mean and covariance
             precZ = 1 / eff_var_prior
@@ -1028,10 +1007,10 @@ class VAE(nn.Module):
                 print("use, one of: multinomial, systematic, none")
 
             # Here prior and posterior are the same and we just need the likelihood of the data
-            prior_mean = self.rnn.transition(Qz.unsqueeze(2), v=v).squeeze(2)
+            prior_mean = self.rnn.transition(Qz, v=v)
             if sim_v:
                 v = self.rnn.transition.step_input(v, torch.zeros_like(v))
-            vs.append(v.squeeze(2))
+            vs.append(v)
             # Sample from the posterior and calculate likelihood
             Q_dist = torch.distributions.Normal(
                 loc=prior_mean, scale=torch.sqrt(eff_var_prior)
@@ -1077,13 +1056,13 @@ class VAE(nn.Module):
                 # Marginal smoothing, note this jas K^2 cost!
 
                 prior_mean = self.rnn(
-                    Qzs[t].unsqueeze(-2), noise_scale=0, u=vs[t - 1].unsqueeze(2)
-                ).squeeze(-2)
+                    Qzs[t], noise_scale=0, u=vs[t - 1]
+                )
                 probs_ij = (
                     torch.distributions.Normal(
                         loc=prior_mean.unsqueeze(3), scale=eff_std_prior.unsqueeze(3)
                     )
-                    .log_prob(Qzs_sm[t + 1].unsqueeze(2))
+                    .log_prob(Qzs_sm[t + 1])
                     .sum(axis=1)
                 )
                 log_denom = torch.logsumexp(

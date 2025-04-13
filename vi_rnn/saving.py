@@ -61,7 +61,8 @@ def save_model(model, training_params, task_params, name=None, directory=None):
         pickle.dump(task_params, f)
 
     torch.save(model.rnn.state_dict(), state_dict_file_prior)
-    torch.save(model.encoder.state_dict(), state_dict_file_encoder)
+    if model.has_encoder:
+        torch.save(model.encoder.state_dict(), state_dict_file_encoder)
 
     return directory + name
 
@@ -177,7 +178,6 @@ def load_model(name, load_encoder=True):
         else:
             print("no out nonlinearity found, setting to identity")
             vae_params["rnn_params"]["out_nonlinearity"] = "identity"
-    print(vae_params["rnn_params"]["out_nonlinearity"])
     if "shared_tau" in vae_params["rnn_params"]:
         vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop("shared_tau")
 
@@ -195,12 +195,16 @@ def load_model(name, load_encoder=True):
         d[key.replace("latent_step", "transition")] = d.pop(key)
     if "transition.AW" in list(d.keys()):
         d["transition.decay_param"] = d.pop("transition.AW")
+    if "transition.decay" in list(d.keys()):
+        d["transition.decay_param"] = d.pop("transition.decay")
+    d["transition.decay_param"]=d["transition.decay_param"].view(1)
     for key in list(d.keys()):
         if key not in model.rnn.state_dict().keys():
             del d[key]
             print("key " + key + " not found in rnn, deleted")
     model.rnn.load_state_dict(d)
-    if load_encoder:
+    
+    if model.has_encoder and load_encoder:
         d = torch.load(state_dict_file_encoder, map_location=torch.device("cpu"))
         for key in list(d.keys()):
             if key not in model.encoder.state_dict().keys():
