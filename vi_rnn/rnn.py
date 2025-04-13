@@ -172,12 +172,12 @@ class RNN(nn.Module):
                 z += (
                     noise_scale
                     * self.normal.sample(z.shape)
-                    * self.std_embed_z(self.R_z).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+                    * self.std_embed_z(self.R_z).view(1,-1,1)
                 )
         return z, v
 
     def get_latent_time_series(
-        self, time_steps=1000, cut_off=0, noise_scale=1, z0=None, u=None, sim_v=False
+        self, time_steps=1000, cut_off=0, noise_scale=1, z0=None, u=None, sim_v=False, k=1
     ):
         """
         Generate a latent time series of length time_steps
@@ -195,18 +195,18 @@ class RNN(nn.Module):
             Z = []
             V = []
             if z0 is None:
-                z = torch.randn(1, self.d_z, 1, device=self.R_z.device)
+                z = torch.randn(1, self.d_z, k, device=self.R_z.device)
 
             # set initial state
             else:
                 if z0.shape[0] == 1 or len(z0.shape) == 1:  # only z dimension is given
-                    z = z0.to(device=self.R_z.device).reshape(1, self.d_z, 1)
+                    z = z0.to(device=self.R_z.device).reshape(1, self.d_z, 1).expand(1,self.d_z,k)
                 elif len(z0.shape) < 3:  # trial and z dimension is given
                     z = z0.to(device=self.R_z.device).reshape(
                         z0.shape[0], self.d_z, 1
-                    )
+                    ).expand(z0.shape[0], self.d_z,k)
                 else:
-                    z = z0.to(device=self.R_z.device)
+                    z = z0.to(device=self.R_z.device).expand(z0.shape[0], self.d_z,k)
 
             # run model with input
             if u is not None:
@@ -274,13 +274,11 @@ class RNN(nn.Module):
         else:
             R = z
         X = self.observation(R)
-        
-        samp_shape = [1]*len(X.shape)
-        samp_shape[1]=-1
+    
         X += (
             noise_scale
             * self.normal.sample(X.shape)
-            * self.std_embed_x(self.R_x).view(*samp_shape)
+            * self.std_embed_x(self.R_x).view(1,-1,*([1]*len(X.shape[2:])))
         )
         return X
 
@@ -329,7 +327,7 @@ class Observation(nn.Module):
             self.mask = torch.ones(1)
 
         self.Bias = nn.Parameter(
-            torch.zeros(1, self.dx, 1, 1), requires_grad=train_bias
+            torch.zeros(self.dx), requires_grad=train_bias
         )
 
         # for Poisson we need to rectify outputs to be positive
@@ -351,8 +349,9 @@ class Observation(nn.Module):
         Returns:
             X (torch.tensor; n_trials x dim_x x time_steps x k): observations
         """
+        bias = self.Bias.view(1,-1,*([1]*len(z.shape[2:])))
         return self.nonlinearity(
-            torch.einsum("zx,bz...->bx...", (self.cast_B(self.B), z)) + self.Bias
+            torch.einsum("zx,bz...->bx...", (self.cast_B(self.B), z))+bias
         )
 
 
@@ -572,7 +571,7 @@ class Transition_FullRank(nn.Module):
             torch.einsum(
                 "zN,BN...->Bz...",
                 self.W,
-                self.nonlinearity(z, self.h.unsqueeze(0).unsqueeze(2).unsqueeze(3)),
+                self.nonlinearity(z, self.h.view(1,-1,1)),
             )
         )
 

@@ -14,7 +14,6 @@ def get_initial_state(
 
         # get prior mean and std
         prior_mean = vae.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)  # Bs, Dz,1
-
         if initial_state == "prior_sample":
             if vae.rnn.params["noise_z"] == "full":
                 chol_prior_t0 = chol_cov_embed(vae.rnn.R_z_t0)
@@ -49,7 +48,7 @@ def get_initial_state(
                 B = B.T
             else:
                 B = vae.rnn.observation.cast_B(vae.rnn.observation.B)
-            Obs_bias = vae.rnn.observation.Bias.squeeze(-1)
+            Obs_bias = vae.rnn.observation.Bias.view(1,-1,1)
 
             # Calculate the Kalman gain and interpolation alpha
             if vae.dim_x < vae.dim_z * 4:
@@ -153,7 +152,8 @@ def predict(
     optimal_proposal=False,
     sim_v=True,
     cut_off=0,
-    max_fr = 10000.
+    max_fr = 10000.,
+    k = 1
 ): 
     """
     Sample new data from the model
@@ -167,7 +167,8 @@ def predict(
         optimal_proposal (bool): whether to use the optimal proposal
         sim_v (bool): whether to simulate the latent variables
         cut_off (int): cut off for the inputs
-        max_fr:
+        max_fr: cut off higher_values than this
+        k: number of particles
     Returns:
         Z (np.array; batch_size x dim_z x dim_T): latent variables
         data_gen (np.array; batch_size x dim_x x dim_T): generated data
@@ -197,11 +198,11 @@ def predict(
             z0 = initial_state
         if sim_v:
             Z, v = vae.rnn.get_latent_time_series(
-                time_steps=dur, z0=z0, u=u, noise_scale=1, sim_v=sim_v, cut_off=cut_off
+                time_steps=dur, z0=z0, u=u, noise_scale=1, sim_v=sim_v, cut_off=cut_off, k=k
             )
         else:
             Z = vae.rnn.get_latent_time_series(
-                time_steps=dur, z0=z0, u=u, noise_scale=1, sim_v=sim_v, cut_off=cut_off
+                time_steps=dur, z0=z0, u=u, noise_scale=1, sim_v=sim_v, cut_off=cut_off, k=k
             )
             v = u.unsqueeze(-1)
         rates = (
