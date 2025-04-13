@@ -188,6 +188,12 @@ def load_model(name, load_encoder=True, backward_compat=False):
             vae_params["rnn_params"]["obs_nonlinearity"]=vae_params["rnn_params"].pop("out_nonlinearity")
         if "shared_tau" in vae_params["rnn_params"]:
             vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop("shared_tau")
+        if "transition" not in vae_params["rnn_params"]:
+            if "full_rank" in vae_params["rnn_params"] and vae_params["rnn_params"]["full_rank"] == True:
+                vae_params["rnn_params"]["transition"] = "full_rank"
+            else:
+                vae_params["rnn_params"]["transition"] = "low_rank"
+
 
         if training_params["loss_f"] == "VGTF":
             training_params["loss_f"] = "smc"
@@ -217,7 +223,7 @@ def load_model(name, load_encoder=True, backward_compat=False):
             if key not in model.rnn.state_dict().keys():
                 del d[key]
                 print("key " + key + " not found in rnn, deleted")
-                
+
     model.rnn.load_state_dict(d)
     
     if model.has_encoder and load_encoder:

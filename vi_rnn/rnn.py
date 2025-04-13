@@ -58,18 +58,7 @@ class RNN(nn.Module):
 
         # initialise the transition step
         # ---------
-
-        if "full_rank" in params.keys() and params["full_rank"] == True:
-            print("using full rank transitions")
-            self.transition = Transition_FullRank(
-                self.d_z,
-                self.d_u,
-                nonlinearity=params["activation"],
-                decay=params["decay"],
-                g=params["g"],
-                train_neuron_bias=params["train_neuron_bias"],
-            )
-        else:
+        if params["transition"]=="low_rank":
             self.transition = Transition_LowRank(
                 self.d_z,
                 self.d_u,
@@ -80,6 +69,17 @@ class RNN(nn.Module):
                 train_neuron_bias=params["train_neuron_bias"],
             )
 
+        elif params["transition"]=="full_rank":
+            self.transition = Transition_FullRank(
+                self.d_z,
+                self.d_u,
+                nonlinearity=params["activation"],
+                decay=params["decay"],
+                g=params["g"],
+                train_neuron_bias=params["train_neuron_bias"],
+            )
+        else:
+            raise ValueError("transition not recognised, use low_rank or full_rank")
         # initialise the observation step
         # ---------
 
@@ -441,21 +441,17 @@ class Transition_LowRank(nn.Module):
 
         # nonlinearity
         if nonlinearity == "relu":
-            print("using ReLU activation")
             relu = torch.nn.ReLU()
             self.nonlinearity = lambda x, h: relu(x - h)
             self.dnonlinearity = relu_derivative
         elif nonlinearity == "clipped_relu":
-            print("using clipped ReLU activation")
             relu = torch.nn.ReLU()
             self.nonlinearity = lambda x, h: relu(x + h) - relu(x)
             self.dnonlinearity = clipped_relu_derivative
         elif nonlinearity == "tanh":
-            print("using tanh activation")
             self.nonlinearity = lambda x, h: torch.nn.Tanh(x - h)
             self.dnonlinearity = tanh_derivative
         elif nonlinearity == "identity":
-            print("using identity activation")
             self.nonlinearity = lambda x, h: x - h
             self.dnonlinearity = lambda x: torch.ones_like(x)
 

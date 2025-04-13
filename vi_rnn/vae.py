@@ -54,7 +54,7 @@ class VAE(nn.Module):
                 print("Warning: encoder not recognised, continuing without encoder")
                 self.has_encoder = False
         else:
-            print("Loading VAE without encoder")
+            print("Initialising VAE without encoder")
             self.has_encoder = False
 
         self.min_var = 1e-8
