@@ -225,7 +225,7 @@ def load_model(name, load_encoder=True, backward_compat=False):
         if len(d["observation.Bias"].shape)>1:
             d["observation.Bias"]=d["observation.Bias"].view(d["observation.Bias"].shape[1])
         if vae_params["rnn_params"]["observation"] == "one_to_one" and len(d["observation.B"].shape)>1:
-            d["observation.B"] = torch.diagonal(d["observation.B"])
+            d["observation.B"] = torch.diagonal(d["observation.B"]**2) # square because prev bug...
 
         for key in list(d.keys()):
             if key not in model.rnn.state_dict().keys():

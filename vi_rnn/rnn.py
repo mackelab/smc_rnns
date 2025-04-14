@@ -22,10 +22,10 @@ class RNN(nn.Module):
         """
 
         super(RNN, self).__init__()
-        self.d_x = dim_x
-        self.d_z = dim_z
-        self.d_u = dim_u
-        self.d_N = dim_N
+        self.dim_x = dim_x
+        self.dim_z = dim_z
+        self.dim_u = dim_u
+        self.dim_N = dim_N
 
         self.params = params
         self.normal = torch.distributions.Normal(0, 1)
@@ -35,10 +35,10 @@ class RNN(nn.Module):
 
         # Gaussian observations
         if params['obs_likelihood'] == "Gauss":
-            self.observation_distribution=lambda x, noise_scale=1:torch.distributions.Normal(loc=x, scale=self.std_embed_x(self.R_x).view(1,self.d_x,*([1]*len(x.shape[2:])))*noise_scale)
+            self.observation_distribution=lambda x, noise_scale=1:torch.distributions.Normal(loc=x, scale=self.std_embedim_x(self.R_x).view(1,self.dim_x,*([1]*len(x.shape[2:])))*noise_scale)
         if "noise_x" in params.keys():
-            self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
-                params["noise_x"], self.d_x, params["init_noise_x"], params["train_noise_x"]
+            self.R_x, self.std_embedim_x, self.var_embedim_x = init_noise(
+                params["noise_x"], self.dim_x, params["init_noise_x"], params["train_noise_x"]
             )
       
         # Poisson observations
@@ -54,14 +54,14 @@ class RNN(nn.Module):
        
     
         # Latent states transition noise
-        self.R_z, self.std_embed_z, self.var_embed_z = init_noise(
-            params["noise_z"], self.d_z, params["init_noise_z"], params["train_noise_z"]
+        self.R_z, self.std_embedim_z, self.var_embedim_z = init_noise(
+            params["noise_z"], self.dim_z, params["init_noise_z"], params["train_noise_z"]
         )
 
         # Initial latent state noise
-        self.R_z_t0, self.std_embed_z_t0, self.var_embed_z_t0 = init_noise(
+        self.R_z_t0, self.std_embedim_z_t0, self.var_embedim_z_t0 = init_noise(
             params["noise_z_t0"],
-            self.d_z,
+            self.dim_z,
             params["init_noise_z_t0"],
             params["train_noise_z_t0"],
         )
@@ -70,9 +70,9 @@ class RNN(nn.Module):
         # ---------
         if params["transition"]=="low_rank":
             self.transition = Transition_LowRank(
-                self.d_z,
-                self.d_u,
-                self.d_N,
+                self.dim_z,
+                self.dim_u,
+                self.dim_N,
                 nonlinearity=params["activation"],
                 decay=params["decay"],
                 weight_dist=params["weight_dist"],
@@ -81,8 +81,8 @@ class RNN(nn.Module):
 
         elif params["transition"]=="full_rank":
             self.transition = Transition_FullRank(
-                self.d_z,
-                self.d_u,
+                self.dim_z,
+                self.dim_u,
                 nonlinearity=params["activation"],
                 decay=params["decay"],
                 g=params["g"],
@@ -103,25 +103,25 @@ class RNN(nn.Module):
             else:
                 raise ValueError("readout_from not recognised, use rates, currents (for a one_to_one obervation model)")
             self.observation = One_to_One_observation(
-                    d_x=self.d_x,
+                    dim_x=self.dim_x,
                     z_to_x_func =z_to_x_func,
                     train_bias=params["train_obs_bias"],
                     train_weights=params["train_obs_weights"],
                     obs_nonlinearity=params["obs_nonlinearity"]
                 )
         elif params["observation"]=="affine":
-            if self.readout_from == "z_and_v":
-                d_v=self.d_u
+            if self.readout_from == "z_andim_v":
+                dim_v=self.dim_u
             elif self.readout_from == "z":
-                d_v=0
+                dim_v=0
             else:
                 raise ValueError(
-                    "readout_from not recognised, use z_and_v, or z (for an affine observation model)"
+                    "readout_from not recognised, use z_andim_v, or z (for an affine observation model)"
                 )
             self.observation = Affine_observation(
-                    d_x=self.d_x,
-                    d_z = self.d_z,
-                    d_v = d_v,
+                    dim_x=self.dim_x,
+                    dim_z = self.dim_z,
+                    dim_v = dim_v,
                     train_bias=params["train_obs_bias"],
                     train_weights=params["train_obs_weights"],
                     obs_nonlinearity=params["obs_nonlinearity"]
@@ -136,12 +136,12 @@ class RNN(nn.Module):
         # ---------
 
         if params["transition"]=="full_rank":
-            self.initial_state = nn.Parameter(torch.zeros(self.d_z), requires_grad=True)
+            self.initial_state = nn.Parameter(torch.zeros(self.dim_z), requires_grad=True)
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(0)
 
         elif params["initial_state"] == "zero":
             self.initial_state = nn.Parameter(
-                torch.zeros(self.d_z), requires_grad=False
+                torch.zeros(self.dim_z), requires_grad=False
             )
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(
                 0
@@ -150,7 +150,7 @@ class RNN(nn.Module):
                 torch.einsum("Nu,Bu->BN", self.transition.Wu, u),
             )
         elif params["initial_state"] == "trainable":
-            self.initial_state = nn.Parameter(torch.zeros(self.d_z), requires_grad=True)
+            self.initial_state = nn.Parameter(torch.zeros(self.dim_z), requires_grad=True)
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(
                 0
             ) + orth_proj(
@@ -166,27 +166,7 @@ class RNN(nn.Module):
                 torch.einsum("Nu,Bu->BN", self.transition.Wu, u),
             )
 
-    def get_latent_sample(self, z, noise_scale=0):
-        """forward step of the RNN, predict z one step ahead
-        Args:
-            z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
 
-        Returns:
-            z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
-        """
-    
-        if self.params["noise_z"] == "full":
-            cov_chol = chol_cov_embed(self.R_z)
-            z += noise_scale * torch.einsum(
-                "xz, Bz... -> Bx...", cov_chol, self.normal.sample(z.shape)
-            )
-        else:
-            z += (
-                noise_scale
-                * self.normal.sample(z.shape)
-                * self.std_embed_z(self.R_z).view(1,-1,1)
-            )
-        return z
 
     def get_latent_time_series(
         self, time_steps=1000, cut_off=0, noise_scale=1, z0=None, u=None, k=1
@@ -205,42 +185,40 @@ class RNN(nn.Module):
         with torch.no_grad():
             Z = []
             V = []
-            if z0 is None:
-                z = torch.randn(1, self.d_z, k, device=self.R_z.device)
-
-            # set initial state
-            else:
-                if z0.shape[0] == 1 or len(z0.shape) == 1:  # only z dimension is given
-                    z = z0.to(device=self.R_z.device).reshape(1, self.d_z, 1).expand(1,self.d_z,k)
-                elif len(z0.shape) < 3:  # trial and z dimension is given
-                    z = z0.to(device=self.R_z.device).reshape(
-                        z0.shape[0], self.d_z, 1
-                    ).expand(z0.shape[0], self.d_z,k)
-                else:
-                    z = z0.to(device=self.R_z.device).expand(z0.shape[0], self.d_z,k)
-
-            # run model with time-varying input
+            
             if len(u.shape) < 4:
                 u = u.unsqueeze(-1)  # add particle dim
             if u is None:
                 u = torch.zeros(z0.shape[0],self.du,time_steps, 1)
+            
+            # get initial input
             if self.simulate_input:
-                v = torch.zeros(u.shape[0], self.d_u, 1, device=self.R_z.device)
+                v = torch.zeros(u.shape[0], self.dim_u, 1, device=self.R_z.device)
             else:
                 v = u[:, :, 0]
+
+            # get initial state and add particle dim
+            if z0 is None:
+                z = (
+                        self.rnn.get_initial_state(v[:, :, 0]).unsqueeze(2)
+                        .expand(1, self.dim_z, k)
+                    )
+            else:
+                if z0.shape[0] == 1 or len(z0.shape) == 1:  # only z dimension is given
+                    z = z0.to(device=self.R_z.device).reshape(1, self.dim_z, 1).expand(1,self.dim_z,k)
+                elif len(z0.shape) < 3:  # trial and z dimension is given
+                    z = z0.to(device=self.R_z.device).reshape(
+                        z0.shape[0], self.dim_z, 1
+                    ).expand(z0.shape[0], self.dim_z,k)
+                else:
+                    z = z0.to(device=self.R_z.device).expand(z0.shape[0], self.dim_z,k)
 
             Z.append(z)
             V.append(v)
 
             for t in range(1,time_steps + cut_off):
                 
-                # get mean
-                z = self.transition(
-                    z,
-                    v=v,
-                )
-                # get sample
-                z= self.get_latent_sample(z,noise_scale=noise_scale)
+                _, z = self.get_latent(z,v, noise_scale=noise_scale)
 
                 # process input
                 if self.simulate_input:
@@ -260,7 +238,35 @@ class RNN(nn.Module):
 
         return Z, V
 
+    def get_latent_sample(self, z, noise_scale=0):
+        """forward step of the RNN, predict z one step ahead
+        Args:
+            z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
 
+        Returns:
+            z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
+        """
+    
+        if self.params["noise_z"] == "full":
+            cov_chol = chol_cov_embed(self.R_z)
+            z += noise_scale * torch.einsum(
+                "xz, Bz... -> Bx...", cov_chol, self.normal.sample(z.shape)
+            )
+        else:
+            z += (
+                noise_scale
+                * self.normal.sample(z.shape)
+                * self.std_embedim_z(self.R_z).view(1,-1,1)
+            )
+        return z
+
+    def get_latent(self, z, v, noise_scale=0):
+        
+        z_mean = self.transition(z,v=v)
+        z_sample = self.get_latent_sample(z,noise_scale=noise_scale)
+        
+        return z_mean, z_sample
+    
     def get_observation(self, z, v=None, noise_scale=1):
         """
         Generate observations from the latent states
@@ -281,7 +287,7 @@ class One_to_One_observation(nn.Module):
     """
     def __init__(
         self,
-        d_x,
+        dim_x,
         z_to_x_func,
         train_bias=True,
         train_weights=True,
@@ -289,22 +295,22 @@ class One_to_One_observation(nn.Module):
     ):
         """
         Args:
-            d_x (int): dimensionality of the data
+            dim_x (int): dimensionality of the data
             z_to_x_func: maps latents to RNN unit space
             train_bias (bool): whether to train the bias
             train_weights (bool): whether to train the weights
             abs_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
         """
         super(One_to_One_observation, self).__init__()
-        self.d_x =d_x
+        self.dim_x =dim_x
         self.z_to_x_func = z_to_x_func 
         self.B = nn.Parameter(
-            torch.ones(self.d_x),
+            torch.ones(self.dim_x),
             requires_grad=train_weights,
         )
 
         self.Bias = nn.Parameter(
-            torch.zeros(self.d_x), requires_grad=train_bias
+            torch.zeros(self.dim_x), requires_grad=train_bias
         )
 
         # for Poisson we need to rectify outputs to be positive
@@ -341,34 +347,34 @@ class Affine_observation(nn.Module):
     """
     def __init__(
         self,
-        d_x,
-        d_z,
-        d_v=0,
+        dim_x,
+        dim_z,
+        dim_v=0,
         train_bias=True,
         train_weights=True,
         obs_nonlinearity = "identity"
     ):
         """
         Args:
-            d_x (int): dimensionality of the data
-            d_z (int): dimensionality of the latents
-            d_v (int): dimensionality of the input
+            dim_x (int): dimensionality of the data
+            dim_z (int): dimensionality of the latents
+            dim_v (int): dimensionality of the input
             train_bias (bool): whether to train the bias
             train_weights (bool): whether to train the weights
             obs_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
         """
         super(Affine_observation, self).__init__()
-        self.d_x = d_x
-        self.d_z= d_z
-        self.d_v = d_v
+        self.dim_x = dim_x
+        self.dim_z= dim_z
+        self.dim_v = dim_v
 
         self.B = nn.Parameter(
-            np.sqrt(2 / (self.d_z+self.d_v)) * torch.randn(self.d_z+self.d_v, self.d_x),
+            np.sqrt(2 / (self.dim_z+self.dim_v)) * torch.randn(self.dim_z+self.dim_v, self.dim_x),
             requires_grad=train_weights,
         )
 
         self.Bias = nn.Parameter(
-            torch.zeros(self.d_x), requires_grad=train_bias
+            torch.zeros(self.dim_x), requires_grad=train_bias
         )
 
         # for Poisson we need to rectify outputs to be positive
@@ -387,8 +393,8 @@ class Affine_observation(nn.Module):
                 "obs_nonlinearity not recognised, use exp, relu, softplus, or identity"
             )
         
-        # readout from z_and_v
-        if self.d_v>0:
+        # readout from z_andim_v
+        if self.dim_v>0:
             self.cat_zv =  lambda z, v:  torch.concat([(v.repeat(*([1]*len(v.shape[:-1])), z.shape[-1])),z],dim=1)
         # or just z
         else:

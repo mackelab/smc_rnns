@@ -102,20 +102,16 @@ class VAE(nn.Module):
         dim_z = self.dim_z
 
         # Get the initial prior mean
-        if self.rnn.simulate_input:
-            prior_mean = (
-                self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0])).unsqueeze(2)
+        if self.rnn.simulate_input:     
+            v = torch.zeros(batch_size, self.dim_u, 1, device=x.device)
+        else:  
+            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
+        
+        prior_mean = (
+                self.rnn.get_initial_state(v[:, :, 0]).unsqueeze(2)
                 .expand(batch_size, self.dim_z, k)
             )
-            v = torch.zeros(batch_size, self.dim_u, 1, device=x.device)
-
-        else:  # initialise in the affine subspace corresponding to the input
-            prior_mean = (
-                self.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)
-                .expand(batch_size, self.dim_z, k)
-            )  # BS,Dz,K
-            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
-
+        
         x = x.unsqueeze(-1)  # add particle dimension
 
         # Get the observation weights and bias
@@ -419,16 +415,17 @@ class VAE(nn.Module):
         alphas = []
 
         # Get the initial prior mean
-        prior_mean = (
-            self.rnn.get_initial_state(u[:, :, 0])
-            .unsqueeze(2)
-            .expand(batch_size, self.dim_z, k)
-        )  # BS,Dz,K
-
-        if self.rnn.simulate_input:
+        if self.rnn.simulate_input:     
             v = torch.zeros(batch_size, self.dim_u, 1, device=x.device)
-        else:
-            v = u[:, :, 0].unsqueeze(-1)
+        else:  
+            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
+        
+        prior_mean = (
+                self.rnn.get_initial_state(v[:, :, 0]).unsqueeze(2)
+                .expand(batch_size, self.dim_z, k)
+            )
+        
+        
         # Calculate the initial posterior mean and covariance
 
         precZ = 1 / eff_var_prior_t0
@@ -658,16 +655,17 @@ class VAE(nn.Module):
         # Get the initial prior mean
         batch_size, dim_x, time_steps = x.shape
 
+        # Get the initial prior mean
+        if self.rnn.simulate_input:     
+            v = torch.zeros(batch_size, self.dim_u, 1, device=x.device)
+        else:  
+            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
+        
         prior_mean = (
-            self.rnn.get_initial_state(u[:, :, 0])
-            .unsqueeze(2)
-            .expand(batch_size, self.dim_z, k)
-        )  # BS,Dz,K
-
-        if self.rnn.simulate_input:
-            v = torch.zeros(batch_size, self.dim_u, 1, 1, device=x.device)
-        else:
-            v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)
+                self.rnn.get_initial_state(v[:, :, 0]).unsqueeze(2)
+                .expand(batch_size, self.dim_z, k)
+            )
+        
         # Calculate the initial posterior mean and covariance
 
         # Sample from the posterior and calculate likelihood
@@ -843,18 +841,16 @@ class VAE(nn.Module):
         if u is None:
             u = torch.zeros(x.shape[0], self.dim_u, x.shape[2]).to(x.device)
         # Get the initial prior mean
-        if self.rnn.simulate_input:
-            prior_mean = (
-                self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0])).unsqueeze(2)
+        if self.rnn.simulate_input:     
+            v = torch.zeros(bs, self.dim_u, 1, device=x.device)
+        else:  
+            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
+        
+        prior_mean = (
+                self.rnn.get_initial_state(v[:, :, 0]).unsqueeze(2)
                 .expand(bs, self.dim_z, k)
             )
-            v = torch.zeros(bs, self.dim_u, 1, device=x.device)
-        else:  # initialise in the affine subspace corresponding to the input
-            prior_mean = (
-                self.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)
-                .expand(bs, self.dim_z, k)
-            )  # BS,Dz,K
-            v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
+        
 
         # get the posterior mean and covariance
         precZ = 1 / eff_var_prior_t0
