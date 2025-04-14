@@ -292,6 +292,8 @@ class RNN(nn.Module):
             X_sample (torch.tensor; n_trials x dim_x x time_steps x k): observations sample
 
         """
+        if v is None:
+            v = torch.zeros(1,0,1,1,device=z.devices)
         X_mean = self.observation(z,v)
         X_sample = self.get_observation_sample(X_mean,noise_scale=noise_scale)
         return X_mean,X_sample
@@ -511,7 +513,7 @@ class Transition_LowRank(nn.Module):
     def decay(self):
         return torch.exp(-torch.exp(self.decay_param)).view(1,1,1)
     
-    def forward(self, z, v=0):
+    def forward(self, z, v):
         """
         Latent RNN (internal) dynamics, one step forward
         Args:
@@ -536,7 +538,7 @@ class Transition_LowRank(nn.Module):
         v = self.decay * v + (1 - self.decay) * u
         return v
 
-    def get_rates(self, z, v=0):
+    def get_rates(self, z, v):
         """Transform latents to neuron activity, after nonlinearity
         Args:
             z (torch.tensor; n_trials x dim_z x k): latent time series
@@ -547,7 +549,7 @@ class Transition_LowRank(nn.Module):
         R = self.nonlinearity(X, self.h.view(1,-1,1))
         return R
     
-    def get_currents(self, z, v=0):
+    def get_currents(self, z, v):
         """Transform latents to neuron activity, before nonlinearity
         Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
@@ -634,7 +636,7 @@ class Transition_FullRank(nn.Module):
         return torch.exp(-torch.exp(self.decay_param)).view(1,1,1)
 
 
-    def forward(self, z, v=0):
+    def forward(self, z, v):
         """
         One step forward
         Args:

@@ -72,8 +72,8 @@ def find_fixed_points_analytic(a, V, U, hz, h, d=1):
     D_inds = []
     for D_ind, D_init in enumerate(D_list):
 
-        A = -np.eye(R) + np.diag(a) + V @ np.diag(D_init) @ U
-        b = V @ np.diag(D_init) @ h + hz
+        A = -np.eye(R) + np.diag(a) + V @ (D_init[:, None] * U)
+        b = V @ (D_init * h) + hz
         z_hat = np.linalg.solve(A, b)
         n_inverses += 1
 

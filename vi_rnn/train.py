@@ -216,7 +216,7 @@ def train_VAE(
                     H,
                     log_likelihood,
                     alphas,
-                ) = vae.forward_optimal_proposal(
+                ) = vae.filtering_posterior_optimal_proposal(
                     inputs,
                     u=stim,
                     k=training_params["k"],
@@ -225,7 +225,7 @@ def train_VAE(
 
             # else we learn a parameterised encoder network
             elif training_params["loss_f"] == "smc":
-                Loss_it, Z, ll_x, ll_z, H, log_likelihood, alphas = vae.forward(
+                Loss_it, Z, ll_x, ll_z, H, log_likelihood, alphas = vae.filtering_posterior(
                     inputs,
                     u=stim,
                     k=training_params["k"],

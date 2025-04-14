@@ -60,7 +60,49 @@ class VAE(nn.Module):
         self.min_var = 1e-8
         self.max_var = 100
 
-    def forward_optimal_proposal(self, x, u=None, k=1, resample=False):
+
+    def Kalman_update_lowD(self, eff_var_prior_chol, B, eff_var_x):
+        eff_var_x_inv = 1.0 / eff_var_x
+
+        var_Q = torch.linalg.inv(
+            torch.cholesky_inverse(eff_var_prior_chol)
+            + (B * torch.unsqueeze(eff_var_x_inv, 0)) @ B.T
+        )
+        Kalman_gain = var_Q @ (B * torch.unsqueeze(eff_var_x_inv, 0))
+        alpha = Kalman_gain @ B.T
+        one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
+
+        var_Q = (
+            torch.eye(self.dim_z, device=alpha.device) * 1e-8 + (var_Q + var_Q.T) / 2
+        )
+        var_Q_cholesky = torch.linalg.cholesky(var_Q)
+
+        return alpha, one_min_alpha, Kalman_gain, var_Q_cholesky
+
+    def Kalman_update_highD(self, eff_var_prior_chol, B, eff_var_x):
+        eff_var_prior = eff_var_prior_chol @ eff_var_prior_chol.T
+        Kalman_gain = (
+                eff_var_prior
+                @ B
+                @ torch.linalg.inv(torch.diag(eff_var_x) + B.T @ eff_var_prior @ B)
+            )
+        alpha = Kalman_gain @ B.T
+        one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
+
+        # Posterior Joseph stabilised Covariance
+        var_Q = (
+            one_min_alpha @ eff_var_prior @ one_min_alpha.T
+            + (Kalman_gain * torch.unsqueeze(eff_var_x, 0)) @ Kalman_gain.T
+        )
+
+        var_Q = (
+            torch.eye(self.dim_z, device=alpha.device) * 1e-8 + (var_Q + var_Q.T) / 2
+        )
+        var_Q_cholesky = torch.linalg.cholesky(var_Q)
+        
+        return alpha, one_min_alpha, Kalman_gain, var_Q_cholesky
+
+    def filtering_posterior_optimal_proposal(self, x, u, k=1, resample="systematic"):
         """
         Forward pass of the VAE
         Note, here the approximate posterior is the optimal linear combination of the encoder and the RNN
@@ -87,19 +129,33 @@ class VAE(nn.Module):
         ll_qzs = []
         Qzs = []
         alphas = []
+        
+        if resample == "multinomial":
+            resample_f = resample_multinomial
+        elif resample == "systematic":
+            resample_f = resample_systematic
+        elif resample == "none": 
+            resample_f = lambda x: x
+        else:
+            ValueError("resample does not exist, use one of: multinomial, systematic, none")
+        
+        batch_size, dim_x, time_steps = x.shape
+        dim_z = self.dim_z
+        x = x.unsqueeze(-1)  # add particle dimension
 
         # project and clamp the variances
-        eff_var_prior = full_cov_embed(self.rnn.R_z)
-        eff_var_prior_t0 = full_cov_embed(self.rnn.R_z_t0)
         eff_var_prior_chol = chol_cov_embed(self.rnn.R_z)
         eff_var_prior_t0_chol = chol_cov_embed(self.rnn.R_z_t0)
 
         eff_var_x = torch.clip(self.rnn.var_embed_x(self.rnn.R_x), self.min_var)
-        eff_var_x_inv = 1.0 / torch.clip(self.rnn.var_embed_x(self.rnn.R_x), self.min_var)
         eff_std_x = torch.clip(self.rnn.std_embed_x(self.rnn.R_x), np.sqrt(self.min_var))
 
-        batch_size, dim_x, time_steps = x.shape
-        dim_z = self.dim_z
+        # set Kalman update function
+        if dim_x < dim_z * 4:
+            kalman_update = self.Kalman_update_highD
+        else:  
+            kalman_update = self.Kalman_update_lowD
+       
 
         # Get the initial prior mean
         if self.rnn.simulate_input:     
@@ -111,8 +167,6 @@ class VAE(nn.Module):
                 self.rnn.get_initial_state(v[:, :, 0]).unsqueeze(2)
                 .expand(batch_size, self.dim_z, k)
             )
-        
-        x = x.unsqueeze(-1)  # add particle dimension
 
         # Get the observation weights and bias
         if self.rnn.params["readout_from"] == "currents":
@@ -123,39 +177,10 @@ class VAE(nn.Module):
             B = self.rnn.observation.B
         Obs_bias = self.rnn.observation.Bias.view(1,-1,1)
 
-        # Calculate the Kalman gain and interpolation alpha
-        if dim_x < dim_z * 4:
-            Kalman_gain = (
-                eff_var_prior_t0
-                @ B
-                @ torch.linalg.inv(torch.diag(eff_var_x) + B.T @ eff_var_prior_t0 @ B)
-            )
-            alpha = Kalman_gain @ B.T
-            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
+        # Get Kalman gain
+        alpha, one_min_alpha, Kalman_gain, var_Q_cholesky = kalman_update(eff_var_prior_t0_chol, B, eff_var_x)
 
-            # Posterior Joseph stabilised Covariance
-            var_Q = (
-                one_min_alpha @ eff_var_prior_t0 @ one_min_alpha.T
-                + (Kalman_gain * torch.unsqueeze(eff_var_x, 0)) @ Kalman_gain.T
-            )
-
-        else:  # this is generally faster for low-rank models
-            var_Q = torch.linalg.inv(
-                torch.cholesky_inverse(eff_var_prior_t0_chol)
-                + (B * torch.unsqueeze(eff_var_x_inv, 0)) @ B.T
-            )
-            Kalman_gain = var_Q @ (B * torch.unsqueeze(eff_var_x_inv, 0))
-            alpha = Kalman_gain @ B.T
-            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
-
-        # avoid numerical issues
-        var_Q = (
-            torch.eye(self.dim_z, device=alpha.device) * 1e-8 + (var_Q + var_Q.T) / 2
-        )
-
-        var_Q_cholesky = torch.linalg.cholesky(var_Q)
         # Posterior Mean
-
         mean_Q = torch.einsum("zs,BsK->BzK", one_min_alpha, prior_mean) + torch.einsum(
             "zx,BxK->BzK", Kalman_gain, x[:, :, 0] - Obs_bias
         )
@@ -165,7 +190,6 @@ class VAE(nn.Module):
             loc=mean_Q.permute(0, 2, 1), scale_tril=var_Q_cholesky
         )
         Qz = Q_dist.rsample()
-
         ll_qz = Q_dist.log_prob(Qz)
 
         # Calculate likelihood under the prior
@@ -176,6 +200,7 @@ class VAE(nn.Module):
 
         # Get observation mean and calculate likelihood of the data
         Qz = Qz.permute(0, 2, 1)
+
         mean_x = torch.einsum("zx, bzk -> bxk", B, Qz) + Obs_bias
         x_dist = torch.distributions.Normal(
             loc=mean_x.permute(0, 2, 1), scale=eff_std_x
@@ -198,49 +223,13 @@ class VAE(nn.Module):
         time_steps = x.shape[2]
         u = u.unsqueeze(-1)  # account for k
 
-        # precalculate Kalman Gain / Interpolation
-        if dim_x < dim_z * 4:
-            Kalman_gain = (
-                eff_var_prior
-                @ B
-                @ torch.linalg.inv(torch.diag(eff_var_x) + B.T @ eff_var_prior @ B)
-            )
-            alpha = Kalman_gain @ B.T
-            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
-            # Posterior Joseph stabilised Covariance
-            var_Q = (
-                one_min_alpha @ eff_var_prior @ one_min_alpha.T
-                + (Kalman_gain * torch.unsqueeze(eff_var_x, 0)) @ Kalman_gain.T
-            )
-        else:
-            var_Q = torch.linalg.inv(
-                torch.cholesky_inverse(eff_var_prior_chol)
-                + (B * torch.unsqueeze(eff_var_x_inv, 0)) @ B.T
-            )
-            Kalman_gain = var_Q @ (B * torch.unsqueeze(eff_var_x_inv, 0))
-            alpha = Kalman_gain @ B.T
-            one_min_alpha = torch.eye(self.dim_z, device=alpha.device) - alpha
-
-        var_Q = (
-            torch.eye(self.dim_z, device=alpha.device) * 1e-8 + (var_Q + var_Q.T) / 2
-        )
-        var_Q_cholesky = torch.linalg.cholesky(var_Q)
+        # Precalculate Kalman Gain / Interpolation
+        alpha, one_min_alpha, Kalman_gain, var_Q_cholesky = kalman_update(eff_var_prior_chol, B, eff_var_x)
 
         # Start the loop through the time steps
         for t in range(1, time_steps):
             # Resample if necessary
-            if resample == "multinomial":
-                indices = sample_indices_multinomial(log_w)
-                Qz = resample_Q(Qz, indices)
-            elif resample == "systematic":
-                indices = sample_indices_systematic(log_w)
-                Qz = resample_Q(Qz, indices)
-            elif resample == "none":
-                pass
-            else:
-                print("WARNING: resample does not exist")
-                print("use, one of: multinomial, systematic, none")
-
+            Qz = resample_f(Qz, log_w)
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
             # progress input dynamics
@@ -248,9 +237,8 @@ class VAE(nn.Module):
                 v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
                 v = u[:, :, t]
-            # Calculate the Kalman gain and interpolation alpha
 
-            # Calculate the posterior mean and Joseph stabilised covariance
+
             if self.rnn.params["readout_from"] == "currents":
                 v_to_X = torch.einsum(
                     "xv, bvk -> bxk", self.rnn.transition.Wu, v
@@ -340,12 +328,12 @@ class VAE(nn.Module):
             alphas,
         )
 
-    def forward(
+    def filtering_posterior(
         self,
         x,
         u=None,
         k=1,
-        resample=False,
+        resample="none",
         t_forward=0,
     ):
         """
@@ -356,7 +344,6 @@ class VAE(nn.Module):
             u (torch.tensor; n_trials x dim_U x time_steps): input stim
             k (int): number of particles
             resample (str): resampling method
-            out_likelihood (str): likelihood of the output
             t_forward (int): number of time steps to predict forward without using the encoder
         Returns:
             Loss (torch.tensor; n_trials): loss
@@ -371,7 +358,16 @@ class VAE(nn.Module):
         """
         batch_size = x.shape[0]
         ll_x_func= self.rnn.get_observation_log_likelihood
-      
+        
+        if resample == "multinomial":
+            resample_f = resample_multinomial
+        elif resample == "systematic":
+            resample_f = resample_systematic
+        elif resample == "none": 
+            resample_f = lambda x: x
+        else:
+            ValueError("resample does not exist, use one of: multinomial, systematic, none")
+
         # Run the encoder
         Emean, log_Evar = self.encoder(
             x[:, : self.dim_x, : x.shape[2] - t_forward], k=k
@@ -469,17 +465,7 @@ class VAE(nn.Module):
         for t in range(1, time_steps):
 
             # Resample if necessary
-            if resample == "multinomial":
-                indices = sample_indices_multinomial(log_w)
-                Qz = resample_Q(Qz, indices)
-            elif resample == "systematic":
-                indices = sample_indices_systematic(log_w)
-                Qz = resample_Q(Qz, indices)
-            elif resample == "none":
-                pass
-            else:
-                print("WARNING: resample does not exist")
-                print("use, one of: multinomial, systematic, none")
+            Qz = resample_f(Qz, log_w)
 
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
@@ -528,18 +514,8 @@ class VAE(nn.Module):
 
         # Use Bootstrap samples for the last t_forward steps
         for t in range(time_steps, time_steps + t_forward):
-            if resample == "multinomial":
-                indices = sample_indices_multinomial(log_w)
-                Qz = resample_Q(Qz, indices)
-            elif resample == "systematic":
-                indices = sample_indices_systematic(log_w)
-                Qz = resample_Q(Qz, indices)
+            Qz = resample_f(Qz, log_w)
 
-            elif resample == "none":
-                pass
-            else:
-                print("WARNING: resample does not exist")
-                print("use, one of: multinomial, systematic, none")
 
             # Here prior and posterior are the same and we just need the likelihood of the data
             prior_mean = self.rnn.transition(Qz, v=v).squeeze(2)
@@ -623,6 +599,14 @@ class VAE(nn.Module):
             alphas (torch.tensor; n_trials x dim_z x time_steps): interpolation coefficients
 
         """
+        if resample == "multinomial":
+            resample_f = resample_multinomial
+        elif resample == "systematic":
+            resample_f = resample_systematic
+        elif resample == "none": 
+            resample_f = lambda x: x
+        else:
+            ValueError("resample does not exist, use one of: multinomial, systematic, none")
 
         # Define the data likelihood function 
         ll_x_func= self.rnn.get_observation_log_likelihood
@@ -638,12 +622,7 @@ class VAE(nn.Module):
             min=np.sqrt(self.min_var),
             max=np.sqrt(self.max_var),
         )  # 1,Dz,1
-        eff_std_x = torch.clamp(
-            self.rnn.std_embed_x(self.rnn.R_x).unsqueeze(0).unsqueeze(-1),
-            min=np.sqrt(self.min_var),
-            max=np.sqrt(self.max_var),
-        )  # 1,Dx,1
-
+ 
         x_hat = x.unsqueeze(-1)
 
         # Initialise some lists
@@ -690,17 +669,8 @@ class VAE(nn.Module):
         # Loop through the time steps
         for t in range(1, time_steps + t_forward):
             # Resample if necessary
-            if resample == "multinomial":
-                indices = sample_indices_multinomial(log_w)
-                Qz = resample_Q(Qz, indices)
-            elif resample == "systematic":
-                indices = sample_indices_systematic(log_w)
-                Qz = resample_Q(Qz, indices)
-            elif resample == "none":
-                pass
-            else:
-                print("WARNING: resample does not exist")
-                print("use, one of: multinomial, systematic, none")
+            Qz = resample_f(Qz, log_w)
+
 
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
@@ -792,6 +762,14 @@ class VAE(nn.Module):
             Xs_filt (torch.tensor; n_trials x dim_x x time_steps x k): filtered observation time series
             Xs_smooth (torch.tensor; n_trials x dim_x x time_steps x k): smoothed observation time series
         """
+        if resample == "multinomial":
+            resample_f = resample_multinomial
+        elif resample == "systematic":
+            resample_f = resample_systematic
+        elif resample == "none": 
+            resample_f = lambda x: x
+        else:
+            ValueError("resample does not exist, use one of: multinomial, systematic, none")
 
         if t_held_in is None:
             t_held_in = x.shape[2]
@@ -887,21 +865,9 @@ class VAE(nn.Module):
 
         # Loop through the time steps
         for t in range(1, t_held_in):
+            Qz = resample_f(Qz, log_w)
+            Qzs_filt.append(Qz)
 
-            # Resample if necessary
-            if resample == "multinomial":
-                indices = sample_indices_multinomial(log_w)
-                Qz = resample_Q(Qz, indices)
-                Qzs_filt.append(Qz)
-            elif resample == "systematic":
-                indices = sample_indices_systematic(log_w)
-                Qz = resample_Q(Qz, indices)
-                Qzs_filt.append(Qz)
-            elif resample == "none":
-                pass
-            else:
-                print("WARNING: resample does not exist")
-                print("use, one of: multinomial, systematic, none")
 
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
@@ -941,22 +907,8 @@ class VAE(nn.Module):
             log_ws.append(log_w)
             Qzs.append(Qz)
         for t in range(t_held_in, t_held_in + t_bs):
-            # print("bs")
-            if resample == "multinomial":
-                indices = sample_indices_multinomial(log_w)
-                Qz = resample_Q(Qz, indices)
-                Qzs_filt.append(Qz)
-
-            elif resample == "systematic":
-                indices = sample_indices_systematic(log_w)
-                Qz = resample_Q(Qz, indices)
-                Qzs_filt.append(Qz)
-
-            elif resample == "none":
-                pass
-            else:
-                print("WARNING: resample does not exist")
-                print("use, one of: multinomial, systematic, none")
+            Qz = resample_f(Qz, log_w)
+            Qzs_filt.append(Qz)
 
             # Here prior and posterior are the same and we just need the likelihood of the data
             prior_mean = self.rnn.transition(Qz, v=v)
@@ -978,15 +930,8 @@ class VAE(nn.Module):
             Qzs.append(Qz)
 
         # resample last time steps
-        if resample == "multinomial":
-            indices = sample_indices_multinomial(log_w)
-            Qz = resample_Q(Qz, indices)
-            Qzs_filt.append(Qz)
-
-        elif resample == "systematic":
-            indices = sample_indices_systematic(log_w)
-            Qz = resample_Q(Qz, indices)
-            Qzs_filt.append(Qz)
+        Qz = resample_f(Qz, log_w)
+        Qzs_filt.append(Qz)
 
         # Backward Smoothing
         Qzs_sm = torch.zeros(
@@ -1025,8 +970,8 @@ class VAE(nn.Module):
                         log_weights_backward + log_nom_i - log_denom, axis=1
                     )
                     log_weight[:, i] += reweight_i
-                indices = sample_indices_systematic(log_weight)
-                Qzs_sm[t] = resample_Q(Qzs[t], indices)
+                Qzs_sm[t]  = resample_f(Qzs[t], log_weight)
+     
             else:
                 # Conditional smoothing
                 prior_mean = self.rnn.transition(
@@ -1040,9 +985,9 @@ class VAE(nn.Module):
                 log_weights_reweighted = log_ws[t] + ll_pz
 
                 # Resample based on the backward weights
-                indices = sample_indices_systematic(log_weights_reweighted)
-                Qzs_sm[t] = resample_Q(Qzs[t], indices)
+                Qzs_sm[t]  = resample_f(Qzs[t], log_weights_reweighted)
 
+      
         # Use forward samples for the last n_forward steps
 
         for t in range(t_held_in, t_held_in + t_forward):
@@ -1118,6 +1063,15 @@ def sample_indices_systematic(log_weight):
 
     return indices
 
+def resample_multinomial(Qz,log_w):
+    indices = sample_indices_multinomial(log_w)
+    Qz = resample_Q(Qz, indices)
+    return Qz
+
+def resample_systematic(Qz, log_w):
+    indices = sample_indices_systematic(log_w)
+    Qz = resample_Q(Qz, indices)
+    return Qz
 
 def sample_indices_multinomial(log_w):
     """Sample ancestral index using multinomial resampling.
