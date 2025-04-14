@@ -35,9 +35,9 @@ class RNN(nn.Module):
 
         # Gaussian observations
         if params['obs_likelihood'] == "Gauss":
-            self.observation_distribution=lambda x, noise_scale=1:torch.distributions.Normal(loc=x, scale=self.std_embedim_x(self.R_x).view(1,self.dim_x,*([1]*len(x.shape[2:])))*noise_scale)
+            self.observation_distribution=lambda x, noise_scale=1:torch.distributions.Normal(loc=x, scale=self.std_embed_x(self.R_x).view(1,self.dim_x,*([1]*len(x.shape[2:])))*noise_scale)
         if "noise_x" in params.keys():
-            self.R_x, self.std_embedim_x, self.var_embedim_x = init_noise(
+            self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
                 params["noise_x"], self.dim_x, params["init_noise_x"], params["train_noise_x"]
             )
       
@@ -54,12 +54,12 @@ class RNN(nn.Module):
        
     
         # Latent states transition noise
-        self.R_z, self.std_embedim_z, self.var_embedim_z = init_noise(
+        self.R_z, self.std_embed_z, self.var_embed_z = init_noise(
             params["noise_z"], self.dim_z, params["init_noise_z"], params["train_noise_z"]
         )
 
         # Initial latent state noise
-        self.R_z_t0, self.std_embedim_z_t0, self.var_embedim_z_t0 = init_noise(
+        self.R_z_t0, self.std_embed_z_t0, self.var_embed_z_t0 = init_noise(
             params["noise_z_t0"],
             self.dim_z,
             params["init_noise_z_t0"],
@@ -149,6 +149,7 @@ class RNN(nn.Module):
                 self.transition.m,
                 torch.einsum("Nu,Bu->BN", self.transition.Wu, u),
             )
+
         elif params["initial_state"] == "trainable":
             self.initial_state = nn.Parameter(torch.zeros(self.dim_z), requires_grad=True)
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(
@@ -176,11 +177,13 @@ class RNN(nn.Module):
         Args:
             time_steps (int): length of the latent time series
             cut_off (int): cut off the first cut_off time steps
-            noise_scale (float): scale of the noise
+            noise_scale (float): optional scale of the standard deviation
             z0 (torch.tensor; n_trials x dim_z x 1): initial latent state
             u (torch.tensor; n_trials x dim_u x time_steps): input
+            k (int): number of particles
         Returns:
             Z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
+            V (torch.tensor; n_trials x dim_u x time_steps x k): processed input
         """
         with torch.no_grad():
             Z = []
@@ -239,32 +242,41 @@ class RNN(nn.Module):
         return Z, V
 
     def get_latent_sample(self, z, noise_scale=0):
-        """forward step of the RNN, predict z one step ahead
+        """sample latent given mean at current timestep
         Args:
-            z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
-
+            z (torch.tensor; n_trials x dim_z x time_steps x k): mean at time t
+            noise_scale (float): optional scale of the standard deviation
         Returns:
-            z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
+            z_sample (torch.tensor; n_trials x dim_z x time_steps x k): sample at time t
         """
     
         if self.params["noise_z"] == "full":
             cov_chol = chol_cov_embed(self.R_z)
-            z += noise_scale * torch.einsum(
+            z_sample = z + noise_scale * torch.einsum(
                 "xz, Bz... -> Bx...", cov_chol, self.normal.sample(z.shape)
             )
         else:
-            z += (
+            z_sample = z+ (
                 noise_scale
                 * self.normal.sample(z.shape)
-                * self.std_embedim_z(self.R_z).view(1,-1,1)
+                * self.std_embed_z(self.R_z).view(1,-1,1)
             )
-        return z
+        return z_sample
 
     def get_latent(self, z, v, noise_scale=0):
-        
+        """sample and mean given z at previous timestep
+        Args:
+            z (torch.tensor; n_trials x dim_z x time_steps x k): z at time t-1
+            v (torch.tensor; n_trials x dim_u x time_steps x k): input
+            noise_scale (float): optional scale of the standard deviation
+
+        Returns:
+            z_mean (torch.tensor; n_trials x dim_z x time_steps x k): mean at time t
+            z_sample (torch.tensor; n_trials x dim_z x time_steps x k): sample at time t
+
+        """
         z_mean = self.transition(z,v=v)
-        z_sample = self.get_latent_sample(z,noise_scale=noise_scale)
-        
+        z_sample = self.get_latent_sample(z_mean,noise_scale=noise_scale)
         return z_mean, z_sample
     
     def get_observation(self, z, v=None, noise_scale=1):
@@ -272,10 +284,13 @@ class RNN(nn.Module):
         Generate observations from the latent states
         Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
-            noise_scale (float): scale of the noise
             v (torch.tensor; n_trials x dim_u x time_steps x k): input filtered by RNN dynamics
+            noise_scale (float): optional scale of the standard deviation
+
         Returns:
-            X (torch.tensor; n_trials x dim_x x time_steps x k): observations
+            X_mean (torch.tensor; n_trials x dim_x x time_steps x k): observations mean
+            X_sample (torch.tensor; n_trials x dim_x x time_steps x k): observations sample
+
         """
         X_mean = self.observation(z,v)
         X_sample = self.get_observation_sample(X_mean,noise_scale=noise_scale)
@@ -299,7 +314,7 @@ class One_to_One_observation(nn.Module):
             z_to_x_func: maps latents to RNN unit space
             train_bias (bool): whether to train the bias
             train_weights (bool): whether to train the weights
-            abs_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
+            obs_nonlinearity (string): use e.g., 'softplus' to rectify rates for Poisson observations
         """
         super(One_to_One_observation, self).__init__()
         self.dim_x =dim_x
@@ -432,11 +447,11 @@ class Transition_LowRank(nn.Module):
         """
         Args:
             dz (int): dimensionality of the latent space
-            hidden_dim (int): amount of neurons in the network
+            du (int): dimensionality of the inputs
+            hidden_dim (int): amount of neurons in the low-rank RNN
             nonlinearity (str): nonlinearity of the hidden layer
-            tau (float): decay constant
+            decay (float): decay constant
             weight_dist (str): weight distribution
-            train_latent_bias (bool): whether to train the bias of the latents (z)
             train_neuron_bias (bool): whether to train the bias of the neurons (x)
         """
         super(Transition_LowRank, self).__init__()
@@ -522,7 +537,7 @@ class Transition_LowRank(nn.Module):
         return v
 
     def get_rates(self, z, v=0):
-        """Transform latents to neuron activity
+        """Transform latents to neuron activity, after nonlinearity
         Args:
             z (torch.tensor; n_trials x dim_z x k): latent time series
             v (torch.tensor; n_trials x dim_u x k): filtered input
@@ -533,7 +548,7 @@ class Transition_LowRank(nn.Module):
         return R
     
     def get_currents(self, z, v=0):
-        """Transform latents to neuron activity
+        """Transform latents to neuron activity, before nonlinearity
         Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
             v (torch.tensor; n_trials x dim_u x time_steps x k): filtered input
@@ -562,8 +577,8 @@ class Transition_FullRank(nn.Module):
     ):
         """
         Args:
-            dz (int): dimensionality of the latent space
-            hidden_dim (int): amount of neurons in the network
+            dz (int): mount of neurons in the full rank RNN
+            du (int): dimensionality of the inputs
             nonlinearity (str): nonlinearity of the hidden layer
             decay (float): related to time constant tau as (1-dt/tau)
             g (float): scale/gain of the recurrent weights
