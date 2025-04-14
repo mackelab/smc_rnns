@@ -125,6 +125,7 @@ def filtering_posterior_optimal_proposal(vae, x, u, k=1, resample="systematic"):
         else:
             v = u[:, :, t]
 
+        # TODO: what about readout from "z_and_v"
         if vae.rnn.params["readout_from"] == "currents":
             v_to_X = torch.einsum("xv, bvk -> bxk", vae.rnn.transition.Wu, v)
         else:
@@ -168,7 +169,7 @@ def filtering_posterior_optimal_proposal(vae, x, u, k=1, resample="systematic"):
         # w_chol = torch.linalg.cholesky(w_upd)
         # w_dist = torch.distributions.MultivariateNormal(loc=w_mean.permute(0, 2, 1), scale_tril=w_chol#)
         # ll_w = w_dist.log_prob(x[:, :, t].permute(0, 2, 1))
-
+        
         # Store some quantities
         log_ws.append(torch.logsumexp(log_w, axis=-1) - np.log(k))
         Qzs.append(Qz)
