@@ -62,7 +62,7 @@ for _ in range(n_runs):
         "noise_x": "diag",
         "noise_z_t0": "full",
         "observation": "affine",
-        "transition":"low_rank",
+        "transition": "low_rank",
         "activation": "clipped_relu",
         "decay": 0.9,
         "readout_from": "z",

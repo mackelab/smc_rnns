@@ -7,7 +7,6 @@ file_dir = str(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(file_dir + "/..")
 
 
-
 class CNN_encoder(nn.Module):
     """
     This a CNN to parameterise e(z|x)
@@ -23,7 +22,11 @@ class CNN_encoder(nn.Module):
         super(CNN_encoder, self).__init__()
         self.dim_x = dim_x
         self.dim_z = dim_z
-        kernels = params["init_kernel_sizes"] if "init_kernel_sizes" in params else params["kernel_sizes"]
+        kernels = (
+            params["init_kernel_sizes"]
+            if "init_kernel_sizes" in params
+            else params["kernel_sizes"]
+        )
         n_channels = params["n_channels"]
         self.params = params
         print(
@@ -61,8 +64,10 @@ class CNN_encoder(nn.Module):
                 # pad for windowed convs
                 pad = (kernels[i] // 2, (kernels[i] // 2) - 1, 0, 0)
             else:
-                raise ValueError("padding_location not recognised, use 'causal', 'acausal' or 'windowed'")
-         
+                raise ValueError(
+                    "padding_location not recognised, use 'causal', 'acausal' or 'windowed'"
+                )
+
             initial_convs.append(Pad(pad, mode=params["padding_mode"]))
             initial_convs.append(
                 nn.Conv1d(
@@ -80,8 +85,10 @@ class CNN_encoder(nn.Module):
                 initial_convs.append(torch.nn.GELU())
                 initial_convs_std.append(torch.nn.GELU())
             else:
-                raise ValueError("nonlinearity not recognised, use 'leaky_relu' or 'gelu'")
-            
+                raise ValueError(
+                    "nonlinearity not recognised, use 'leaky_relu' or 'gelu'"
+                )
+
             if params["padding_location"] == "causal":
                 # zero pad for causal convs
                 pad = (kernels[-1] - 1, 0, 0, 0)
@@ -91,7 +98,7 @@ class CNN_encoder(nn.Module):
             elif params["padding_location"] == "windowed":
                 # pad for windowed convs
                 pad = (kernels[-1] // 2, (kernels[-1] // 2) - 1, 0, 0)
-             
+
         initial_convs.append(Pad(pad, mode=params["padding_mode"]))
 
         self.initial_stack = nn.Sequential(*initial_convs)

@@ -4,8 +4,6 @@ import numpy as np
 import h5py
 from pathlib import Path
 
-# TODO: add inputs to every dataset class
-
 
 class Basic_dataset(Dataset):
     def __init__(self, task_params, data, data_eval=None, stim=None, stim_eval=None):
@@ -78,7 +76,9 @@ class Basic_dataset_with_trials(Dataset):
         if stim_eval is not None:
             self.stim_eval = torch.from_numpy(stim_eval)
         else:
-            self.stim_eval = torch.zeros(self.data_eval.shape[0], 0, self.data_eval.shape[2])
+            self.stim_eval = torch.zeros(
+                self.data_eval.shape[0], 0, self.data_eval.shape[2]
+            )
 
     def __len__(self):
         """Return number of trials in an epoch"""

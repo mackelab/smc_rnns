@@ -94,17 +94,23 @@ def load_model(name, load_encoder=True, backward_compat=False):
         task_params = CPU_Unpickler(f).load()
     with open(training_params_file, "rb") as f:
         training_params = CPU_Unpickler(f).load()
-    
+
     if backward_compat:
         # Backwards compatibility
         if "prior_params" in vae_params:
             vae_params["rnn_params"] = vae_params.pop("prior_params")
 
-        if "enc_architecture" in vae_params and vae_params["enc_architecture"] == "CNN_causal":
+        if (
+            "enc_architecture" in vae_params
+            and vae_params["enc_architecture"] == "CNN_causal"
+        ):
             vae_params["enc_architecture"] = "CNN"
             vae_params["enc_params"]["padding_location"] = "causal"
 
-        if "enc_params" in vae_params and "padding_location" not in vae_params["enc_params"]:
+        if (
+            "enc_params" in vae_params
+            and "padding_location" not in vae_params["enc_params"]
+        ):
             vae_params["enc_params"]["padding_location"] = "causal"
 
         if "readout_v " in vae_params["rnn_params"]:
@@ -122,9 +128,9 @@ def load_model(name, load_encoder=True, backward_compat=False):
             vae_params["rnn_params"]["train_noise_z_t0"] = vae_params["rnn_params"].pop(
                 "train_noise_prior_t0"
             )
-        #if "prior_architecture" in vae_params:
+        # if "prior_architecture" in vae_params:
         #    vae_params["rnn_architecture"] = vae_params.pop("prior_architecture")
-        #if vae_params["rnn_architecture"] == "PLRNN":
+        # if vae_params["rnn_architecture"] == "PLRNN":
         #    vae_params["rnn_architecture"] = "LRRNN"
 
         if "scalar_noise_x" in vae_params["rnn_params"]:
@@ -178,23 +184,34 @@ def load_model(name, load_encoder=True, backward_compat=False):
             vae_params["rnn_params"]["activation"] = "clipped_relu"
 
         if "out_nonlinearity" not in vae_params["rnn_params"]:
-            if "observation_likelihood"in training_params and training_params["observation_likelihood"] == "Gauss":
+            if (
+                "observation_likelihood" in training_params
+                and training_params["observation_likelihood"] == "Gauss"
+            ):
                 vae_params["rnn_params"]["obs_nonlinearity"] = "identity"
             elif "obs_rectify" in vae_params:
-                vae_params["rnn_params"]["obs_nonlinearity"] = vae_params.pop("obs_rectify")
+                vae_params["rnn_params"]["obs_nonlinearity"] = vae_params.pop(
+                    "obs_rectify"
+                )
             else:
                 print("no out nonlinearity found, setting to identity")
                 vae_params["rnn_params"]["obs_nonlinearity"] = "identity"
         else:
-            vae_params["rnn_params"]["obs_nonlinearity"]=vae_params["rnn_params"].pop("out_nonlinearity")
+            vae_params["rnn_params"]["obs_nonlinearity"] = vae_params["rnn_params"].pop(
+                "out_nonlinearity"
+            )
         if "shared_tau" in vae_params["rnn_params"]:
-            vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop("shared_tau")
+            vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop(
+                "shared_tau"
+            )
         if "transition" not in vae_params["rnn_params"]:
-            if "full_rank" in vae_params["rnn_params"] and vae_params["rnn_params"]["full_rank"] == True:
+            if (
+                "full_rank" in vae_params["rnn_params"]
+                and vae_params["rnn_params"]["full_rank"] == True
+            ):
                 vae_params["rnn_params"]["transition"] = "full_rank"
             else:
                 vae_params["rnn_params"]["transition"] = "low_rank"
-
 
         if training_params["loss_f"] == "VGTF":
             training_params["loss_f"] = "smc"
@@ -204,11 +221,13 @@ def load_model(name, load_encoder=True, backward_compat=False):
             training_params["loss_f"] = "opt_smc"
 
         if "observation_likelihood" in training_params:
-            vae_params["rnn_params"]["obs_likelihood"]=training_params.pop("observation_likelihood")
+            vae_params["rnn_params"]["obs_likelihood"] = training_params.pop(
+                "observation_likelihood"
+            )
         if "sim_v" in training_params:
-            vae_params["rnn_params"]["simulate_input"]=training_params.pop("sim_v")
+            vae_params["rnn_params"]["simulate_input"] = training_params.pop("sim_v")
         elif "simulate_input" not in vae_params["rnn_params"]:
-            vae_params["rnn_params"]["simulate_input"]=False
+            vae_params["rnn_params"]["simulate_input"] = False
 
     model = VAE(vae_params)
 
@@ -221,11 +240,18 @@ def load_model(name, load_encoder=True, backward_compat=False):
             d["transition.decay_param"] = d.pop("transition.AW")
         if "transition.decay" in list(d.keys()):
             d["transition.decay_param"] = d.pop("transition.decay")
-        d["transition.decay_param"]=d["transition.decay_param"].view(1)
-        if len(d["observation.Bias"].shape)>1:
-            d["observation.Bias"]=d["observation.Bias"].view(d["observation.Bias"].shape[1])
-        if vae_params["rnn_params"]["observation"] == "one_to_one" and len(d["observation.B"].shape)>1:
-            d["observation.B"] = torch.diagonal(d["observation.B"]**2) # square because prev bug...
+        d["transition.decay_param"] = d["transition.decay_param"].view(1)
+        if len(d["observation.Bias"].shape) > 1:
+            d["observation.Bias"] = d["observation.Bias"].view(
+                d["observation.Bias"].shape[1]
+            )
+        if (
+            vae_params["rnn_params"]["observation"] == "one_to_one"
+            and len(d["observation.B"].shape) > 1
+        ):
+            d["observation.B"] = torch.diagonal(
+                d["observation.B"] ** 2
+            )  # square because prev bug...
 
         for key in list(d.keys()):
             if key not in model.rnn.state_dict().keys():
@@ -233,7 +259,7 @@ def load_model(name, load_encoder=True, backward_compat=False):
                 print("key " + key + " not found in rnn, deleted")
 
     model.rnn.load_state_dict(d)
-    
+
     if model.has_encoder and load_encoder:
         d = torch.load(state_dict_file_encoder, map_location=torch.device("cpu"))
         for key in list(d.keys()):

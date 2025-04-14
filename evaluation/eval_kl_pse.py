@@ -10,7 +10,7 @@ import scipy.ndimage as ndimage
 import scipy.signal as signal
 import numpy as np
 from scipy.stats import zscore
-from vi_rnn.predict import predict
+from vi_rnn.generate import generate
 
 
 def eval_kl_pse(
@@ -21,9 +21,6 @@ def eval_kl_pse(
     smoothing=20,
     freq_cut_off=10000,
     smooth_at_eval=True,
-    optimal_proposal=True,
-    observation_model="Gauss",
-    sim_v=False,
 ):
     """
     Evaluate the VAE by looking at distribution over states and time
@@ -52,17 +49,14 @@ def eval_kl_pse(
             data = data.unsqueeze(0)
             u = u.unsqueeze(0)
         dur = min(data.shape[2], 10000)
-        data = data[:,:,:dur]
-        _, data_gen, _ = predict(
+        data = data[:, :, :dur]
+        _, data_gen, _ = generate(
             vae,
             u=u,
             x=data,
             dur=dur,
             initial_state=init_state_eval,
-            observation_model=observation_model,
-            optimal_proposal=optimal_proposal,
             cut_off=cut_off,
-            sim_v=sim_v,
         )
         data = data.permute(0, 2, 1).reshape(-1, vae.dim_x)
         data_gen = torch.from_numpy(data_gen).permute(0, 2, 1).reshape(-1, vae.dim_x)
