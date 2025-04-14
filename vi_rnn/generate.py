@@ -94,7 +94,7 @@ def get_initial_state(
 
             Evar = torch.clamp(
                 torch.exp(log_Evar[:, :, 0]), min=vae.min_var, max=vae.max_var
-            )  # Bs,Dx,T,K
+            )  # Bs,Dz K
             eff_var_prior_t0 = torch.clamp(
                 vae.rnn.var_embed_z_t0(vae.rnn.R_z_t0).unsqueeze(0).unsqueeze(-1),
                 min=vae.min_var,
@@ -105,7 +105,6 @@ def get_initial_state(
             precQ = precZ + precE
             alpha = precE / precQ
             mean_Q = (1 - alpha) * prior_mean + alpha * Emean[:, :, 0]
-
             if initial_state == "posterior_sample":
                 eff_var_Q = 1 / precQ
                 Q_dist = torch.distributions.Normal(
@@ -120,6 +119,7 @@ def get_initial_state(
                 raise ValueError(
                     "initial state not recognized, use prior_sample, prior_mean, posterior_sample or posterior_mean"
                 )
+
     return z0
 
 

@@ -59,7 +59,7 @@ def eval_kl_pse(
             cut_off=cut_off,
         )
         data = data.permute(0, 2, 1).reshape(-1, vae.dim_x)
-        data_gen = torch.from_numpy(data_gen).permute(0, 2, 1).reshape(-1, vae.dim_x)
+        data_gen = data_gen[:,:,:,0].permute(0, 2, 1).reshape(-1, vae.dim_x)
         # potentially smooth
         if smooth_at_eval:
             window = signal.windows.hann(15)

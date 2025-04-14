@@ -235,17 +235,11 @@ class RNN(nn.Module):
                     .expand(1, self.dim_z, k)
                 )
             else:
-                if z0.shape[0] == 1 or len(z0.shape) == 1:  # only z dimension is given
+                if len(z0.shape) == 1:  # only z dimension is given
                     z = (
                         z0.to(device=self.R_z.device)
                         .reshape(1, self.dim_z, 1)
                         .expand(1, self.dim_z, k)
-                    )
-                elif len(z0.shape) < 3:  # trial and z dimension is given
-                    z = (
-                        z0.to(device=self.R_z.device)
-                        .reshape(z0.shape[0], self.dim_z, 1)
-                        .expand(z0.shape[0], self.dim_z, k)
                     )
                 else:
                     z = z0.to(device=self.R_z.device).expand(z0.shape[0], self.dim_z, k)
