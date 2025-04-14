@@ -122,11 +122,6 @@ def train_VAE(
     # start timer before training
     time0 = time.time()
 
-    # backwards compat
-    if "sim_v" not in training_params.keys():
-        training_params["sim_v"] = False
-    elif training_params["sim_v"]:
-        print("Simulating V")
 
     for i in range(curr_epoch, training_params["n_epochs"]):
         with torch.no_grad():
@@ -158,7 +153,6 @@ def train_VAE(
                     smooth_at_eval=training_params["smooth_at_eval"],
                     optimal_proposal=optimal_proposal,
                     observation_model=observation_model,
-                    sim_v=training_params["sim_v"],
                 )
                 training_params["KL_x"].append(klx_bin)
                 training_params["PSH"].append(psH)
@@ -189,7 +183,6 @@ def train_VAE(
                         observation_model=observation_model,
                         optimal_proposal=optimal_proposal,
                         cut_off=0,
-                        sim_v=training_params["sim_v"],
                     )
                     plt.figure()
                     plt.plot(Z[0].T)
@@ -228,7 +221,6 @@ def train_VAE(
                     u=stim,
                     k=training_params["k"],
                     resample=training_params["resample"],
-                    sim_v=training_params["sim_v"],
                 )
 
             # else we learn a parameterised encoder network
@@ -239,7 +231,6 @@ def train_VAE(
                     k=training_params["k"],
                     resample=training_params["resample"],
                     t_forward=training_params["t_forward"],
-                    sim_v=training_params["sim_v"],
                 )
 
             # don't use an encoder, just sample from RNN (bootstrap proposal)
@@ -258,7 +249,6 @@ def train_VAE(
                     k=training_params["k"],
                     resample=training_params["resample"],
                     t_forward=training_params["t_forward"],
-                    sim_v=training_params["sim_v"],
                 )
 
             batch_ll += log_likelihood.mean().item()

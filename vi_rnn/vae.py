@@ -60,7 +60,7 @@ class VAE(nn.Module):
         self.min_var = 1e-8
         self.max_var = 100
 
-    def forward_optimal_proposal(self, x, u=None, k=1, resample=False, sim_v=False):
+    def forward_optimal_proposal(self, x, u=None, k=1, resample=False):
         """
         Forward pass of the VAE
         Note, here the approximate posterior is the optimal linear combination of the encoder and the RNN
@@ -70,7 +70,6 @@ class VAE(nn.Module):
             u (torch.tensor; n_trials x dim_U x time_steps): input stim
             k (int): number of particles
             resample (str): resampling method
-            sim_v (bool): simulate the input dynamics
         Returns:
             Loss (torch.tensor; n_trials): loss
             Qzs (torch.tensor; n_trials x dim_z x time_steps): latent time series as predicted by the approximate posterior
@@ -103,7 +102,7 @@ class VAE(nn.Module):
         dim_z = self.dim_z
 
         # Get the initial prior mean
-        if sim_v:
+        if self.rnn.simulate_input:
             prior_mean = (
                 self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0])).unsqueeze(2)
                 .expand(batch_size, self.dim_z, k)
@@ -249,7 +248,7 @@ class VAE(nn.Module):
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
             # progress input dynamics
-            if sim_v:
+            if self.rnn.simulate_input:
                 v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
                 v = u[:, :, t]
@@ -352,7 +351,6 @@ class VAE(nn.Module):
         k=1,
         resample=False,
         t_forward=0,
-        sim_v=False,
     ):
         """
         Forward pass of the VAE
@@ -364,7 +362,6 @@ class VAE(nn.Module):
             resample (str): resampling method
             out_likelihood (str): likelihood of the output
             t_forward (int): number of time steps to predict forward without using the encoder
-            sim_v (bool): simulate the input dynamics
         Returns:
             Loss (torch.tensor; n_trials): loss
             Qzs (torch.tensor; n_trials x dim_z x time_steps): latent time series as predicted by the approximate posterior
@@ -428,7 +425,7 @@ class VAE(nn.Module):
             .expand(batch_size, self.dim_z, k)
         )  # BS,Dz,K
 
-        if sim_v:
+        if self.rnn.simulate_input:
             v = torch.zeros(batch_size, self.dim_u, 1, device=x.device)
         else:
             v = u[:, :, 0].unsqueeze(-1)
@@ -489,7 +486,7 @@ class VAE(nn.Module):
 
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
-            if sim_v:
+            if self.rnn.simulate_input:
                 v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
                 v = u[:, :, t]
@@ -549,7 +546,7 @@ class VAE(nn.Module):
 
             # Here prior and posterior are the same and we just need the likelihood of the data
             prior_mean = self.rnn.transition(Qz, v=v).squeeze(2)
-            if sim_v:
+            if self.rnn.simulate_input:
                 v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
                 v = u[:, :, t]
@@ -607,7 +604,6 @@ class VAE(nn.Module):
         k=1,
         resample=False,
         t_forward=0,
-        sim_v=False,
     ):
         """
         Forward pass of the VAE
@@ -619,7 +615,6 @@ class VAE(nn.Module):
             resample (str): resampling method
             out_likelihood (str): likelihood of the output
             t_forward (int): number of time steps to predict forward without using the encoder
-            sim_v (bool): simulate the input dynamics
         Returns:
             Loss (torch.tensor; n_trials): loss
             Qzs (torch.tensor; n_trials x dim_z x time_steps): latent time series as predicted by the approximate posterior
@@ -669,7 +664,7 @@ class VAE(nn.Module):
             .expand(batch_size, self.dim_z, k)
         )  # BS,Dz,K
 
-        if sim_v:
+        if self.rnn.simulate_input:
             v = torch.zeros(batch_size, self.dim_u, 1, 1, device=x.device)
         else:
             v = u[:, :, 0].unsqueeze(-1).unsqueeze(-1)
@@ -711,7 +706,7 @@ class VAE(nn.Module):
 
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
-            if sim_v:
+            if self.rnn.simulate_input:
                 v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
                 v = u[:, :, t]
@@ -766,10 +761,9 @@ class VAE(nn.Module):
         t_forward=0,
         resample="systematic",
         marginal_smoothing=False,
-        sim_v=False,
     ):
         return self.predict_NLB(
-            x, u, k, t_held_in, t_forward, resample, marginal_smoothing, sim_v=sim_v
+            x, u, k, t_held_in, t_forward, resample, marginal_smoothing
         )
 
     def predict_NLB(
@@ -781,7 +775,6 @@ class VAE(nn.Module):
         t_forward=0,
         resample="systematic",
         marginal_smoothing=False,
-        sim_v=False,
     ):
         """
         Obtain filtering and smoothing posteriors given data and optionally input
@@ -850,7 +843,7 @@ class VAE(nn.Module):
         if u is None:
             u = torch.zeros(x.shape[0], self.dim_u, x.shape[2]).to(x.device)
         # Get the initial prior mean
-        if sim_v:
+        if self.rnn.simulate_input:
             prior_mean = (
                 self.rnn.get_initial_state(torch.zeros_like(u[:, :, 0])).unsqueeze(2)
                 .expand(bs, self.dim_z, k)
@@ -917,7 +910,7 @@ class VAE(nn.Module):
             # Get the prior mean
             prior_mean = self.rnn.transition(Qz, v=v)
             prior_mean = prior_mean
-            if sim_v:
+            if self.rnn.simulate_input:
                 v = self.rnn.transition.step_input(v, u[:, :, t - 1])
             else:
                 v = u[:, :, t]
@@ -971,7 +964,7 @@ class VAE(nn.Module):
 
             # Here prior and posterior are the same and we just need the likelihood of the data
             prior_mean = self.rnn.transition(Qz, v=v)
-            if sim_v:
+            if self.rnn.simulate_input:
                 v = self.rnn.transition.step_input(v, torch.zeros_like(v))
             vs.append(v)
             # Sample from the posterior and calculate likelihood
@@ -1058,7 +1051,7 @@ class VAE(nn.Module):
 
         for t in range(t_held_in, t_held_in + t_forward):
             prior_mean = self.rnn.transition(Qz, v=v)
-            if sim_v:
+            if self.rnn.simulate_input:
                 v = self.rnn.transition.step_input(v, torch.zeros_like(v))
             vs.append(v.squeeze(2))
 

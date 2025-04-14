@@ -205,6 +205,10 @@ def load_model(name, load_encoder=True, backward_compat=False):
 
         if "observation_likelihood" in training_params:
             vae_params["rnn_params"]["obs_likelihood"]=training_params.pop("observation_likelihood")
+        if "sim_v" in training_params:
+            vae_params["rnn_params"]["simulate_input"]=training_params.pop("sim_v")
+        elif "simulate_input" not in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["simulate_input"]=False
 
     model = VAE(vae_params)
 

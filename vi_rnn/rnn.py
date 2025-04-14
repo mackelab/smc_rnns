@@ -36,23 +36,23 @@ class RNN(nn.Module):
         # Gaussian observations
         if params['obs_likelihood'] == "Gauss":
             self.observation_distribution=lambda x, noise_scale=1:torch.distributions.Normal(loc=x, scale=self.std_embed_x(self.R_x).view(1,self.d_x,*([1]*len(x.shape[2:])))*noise_scale)
-        
+        if "noise_x" in params.keys():
+            self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
+                params["noise_x"], self.d_x, params["init_noise_x"], params["train_noise_x"]
+            )
+      
         # Poisson observations
         elif params['obs_likelihood'] == "Poisson":
             self.observation_distribution=lambda x, noise_scale=None:torch.distributions.Poisson(x)
         else:
             raise ValueError("observation_likelihood not recognised, use Gauss or Poisson")       
         
+        # sampling and likelihood functions
         self.get_observation_log_likelihood = lambda x_hat, x,noise_scale=1: self.observation_distribution(x,noise_scale=noise_scale).log_prob(x_hat).sum(axis=1)
         self.get_observation_sample = lambda x,noise_scale=1: self.observation_distribution(x,noise_scale).sample()
         self.obs_likelihood=params['obs_likelihood']
        
-        if "noise_x" in params.keys():
-            # Observation noise (not used when using Poisson observations)
-            self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
-                params["noise_x"], self.d_x, params["init_noise_x"], params["train_noise_x"]
-            )
-      
+    
         # Latent states transition noise
         self.R_z, self.std_embed_z, self.var_embed_z = init_noise(
             params["noise_z"], self.d_z, params["init_noise_z"], params["train_noise_z"]
@@ -90,6 +90,7 @@ class RNN(nn.Module):
             )
         else:
             raise ValueError("transition not recognised, use low_rank or full_rank")
+        
         # initialise the observation step
         # ---------
         self.readout_from = params["readout_from"]
@@ -125,12 +126,16 @@ class RNN(nn.Module):
                     train_weights=params["train_obs_weights"],
                     obs_nonlinearity=params["obs_nonlinearity"]
                 )
+            
+        self.simulate_input=params["simulate_input"]
+
+
       
 
         # initialise the initial state
         # ---------
 
-        if "full_rank" in params.keys() and params["full_rank"] == True:
+        if params["transition"]=="full_rank":
             self.initial_state = nn.Parameter(torch.zeros(self.d_z), requires_grad=True)
             self.get_initial_state = lambda u: self.initial_state.unsqueeze(0)
 
@@ -161,43 +166,30 @@ class RNN(nn.Module):
                 torch.einsum("Nu,Bu->BN", self.transition.Wu, u),
             )
 
-    def forward(self, z, noise_scale=0, u=None, v=None, sim_v=False):
+    def get_latent_sample(self, z, noise_scale=0):
         """forward step of the RNN, predict z one step ahead
         Args:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
-            noise_scale (float): scale of the noise
-            u (torch.tensor; n_trials x dim_u x time_steps x k): raw input
-            v (torch.tensor; n_trials x dim_u x time_steps x k): input filtered by RNN dynamics
-            sim_v (bool): whether to simulate input dynamics, set to true for time-varying inputs!
 
         Returns:
             z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
-            v (torch.tensor; n_trials x dim_u x time_steps x k): input filtered by RNN dynamics
         """
-        if u is not None and sim_v == False:
-            v = u
-        elif u is None and v is None:
-            v = torch.zeros(z.shape[0], 0, z.shape[2], z.shape[3], device=z.device)
-        z = self.transition(z, v=v)
-        if u is not None:
-            v = self.transition.step_input(v, u)
-
-        if noise_scale > 0:
-            if self.params["noise_z"] == "full":
-                cov_chol = chol_cov_embed(self.R_z)
-                z += noise_scale * torch.einsum(
-                    "xz, Bz... -> Bx...", cov_chol, self.normal.sample(z.shape)
-                )
-            else:
-                z += (
-                    noise_scale
-                    * self.normal.sample(z.shape)
-                    * self.std_embed_z(self.R_z).view(1,-1,1)
-                )
-        return z, v
+    
+        if self.params["noise_z"] == "full":
+            cov_chol = chol_cov_embed(self.R_z)
+            z += noise_scale * torch.einsum(
+                "xz, Bz... -> Bx...", cov_chol, self.normal.sample(z.shape)
+            )
+        else:
+            z += (
+                noise_scale
+                * self.normal.sample(z.shape)
+                * self.std_embed_z(self.R_z).view(1,-1,1)
+            )
+        return z
 
     def get_latent_time_series(
-        self, time_steps=1000, cut_off=0, noise_scale=1, z0=None, u=None, sim_v=False, k=1
+        self, time_steps=1000, cut_off=0, noise_scale=1, z0=None, u=None, k=1
     ):
         """
         Generate a latent time series of length time_steps
@@ -207,7 +199,6 @@ class RNN(nn.Module):
             noise_scale (float): scale of the noise
             z0 (torch.tensor; n_trials x dim_z x 1): initial latent state
             u (torch.tensor; n_trials x dim_u x time_steps): input
-            sim_v (bool): whether to simulate input dynamics, set to true for time-varying inputs!
         Returns:
             Z (torch.tensor; n_trials x dim_z x time_steps x k): latent time series
         """
@@ -228,40 +219,46 @@ class RNN(nn.Module):
                 else:
                     z = z0.to(device=self.R_z.device).expand(z0.shape[0], self.d_z,k)
 
-            # run model with input
-            if u is not None:
-                if len(u.shape) < 4:
-                    u = u.unsqueeze(-1)  # add particle dim
+            # run model with time-varying input
+            if len(u.shape) < 4:
+                u = u.unsqueeze(-1)  # add particle dim
+            if u is None:
+                u = torch.zeros(z0.shape[0],self.du,time_steps, 1)
+            if self.simulate_input:
                 v = torch.zeros(u.shape[0], self.d_u, 1, device=self.R_z.device)
-                for t in range(time_steps + cut_off):
-
-                    z, v = self.forward(
-                        z,
-                        noise_scale=noise_scale,
-                        u=u[:, :, t],
-                        v=v,
-                        sim_v=sim_v,
-                    )
-                    Z.append(z)
-                    V.append(v)
-                V = torch.stack(V)
-                V = V[cut_off:]
-                V = V.permute(1, 2, 0, 3)
-            # run model without input
             else:
-                print("no input")
-                for t in range(time_steps + cut_off):
-                    z, _ = self.forward(z, noise_scale=noise_scale)
-                    Z.append(z)
+                v = u[:, :, 0]
 
-            # cut off the transients
+            Z.append(z)
+            V.append(v)
+
+            for t in range(1,time_steps + cut_off):
+                
+                # get mean
+                z = self.transition(
+                    z,
+                    v=v,
+                )
+                # get sample
+                z= self.get_latent_sample(z,noise_scale=noise_scale)
+
+                # process input
+                if self.simulate_input:
+                    v = self.transition.step_input(v, u[:, :, t - 1])
+                else:
+                    v = u[:, :, t]
+
+                Z.append(z)
+                V.append(v)
+            
+            V = torch.stack(V)
+            V = V[cut_off:]
+            V = V.permute(1, 2, 0, 3)
             Z = torch.stack(Z)
             Z = Z[cut_off:]
             Z = Z.permute(1, 2, 0, 3)
 
-        if sim_v:
-            return Z, V
-        return Z
+        return Z, V
 
 
     def get_observation(self, z, v=None, noise_scale=1):

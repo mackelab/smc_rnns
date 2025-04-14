@@ -148,7 +148,6 @@ def predict(
     x=None,
     dur=None,
     initial_state="prior_sample",
-    sim_v=True,
     cut_off=0,
     max_fr = 10000.,
     k = 1
@@ -163,7 +162,6 @@ def predict(
         initial_state (str): initial state of the model
         observation_model (str): observation model
         optimal_proposal (bool): whether to use the optimal proposal
-        sim_v (bool): whether to simulate the latent variables
         cut_off (int): cut off for the inputs
         max_fr: cut off higher_values than this
         k: number of particles
@@ -199,15 +197,10 @@ def predict(
                 )
         else:
             z0 = initial_state
-        if sim_v:
-            Z, v = vae.rnn.get_latent_time_series(
-                time_steps=dur, z0=z0, u=u, noise_scale=1, sim_v=sim_v, cut_off=cut_off, k=k
-            )
-        else:
-            Z = vae.rnn.get_latent_time_series(
-                time_steps=dur, z0=z0, u=u, noise_scale=1, sim_v=sim_v, cut_off=cut_off, k=k
-            )
-            v = u.unsqueeze(-1)
+        Z, v = vae.rnn.get_latent_time_series(
+            time_steps=dur, z0=z0, u=u, noise_scale=1, cut_off=cut_off, k=k
+        )
+     
         rates,data_gen = vae.rnn.get_observation(Z, v=v)
           
         
