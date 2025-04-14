@@ -351,7 +351,6 @@ class VAE(nn.Module):
         u=None,
         k=1,
         resample=False,
-        out_likelihood="Gauss",
         t_forward=0,
         sim_v=False,
     ):
@@ -378,22 +377,8 @@ class VAE(nn.Module):
 
         """
         batch_size = x.shape[0]
-        # Define the data likelihood function
-        if out_likelihood == "Gauss":
-            ll_x_func = (
-                lambda x, mu, sd: torch.distributions.Normal(loc=mu, scale=sd)
-                .log_prob(x)
-                .sum(axis=1)
-            )
-        elif out_likelihood == "Poisson":
-            ll_x_func = (
-                lambda x, mu, sd: torch.distributions.Poisson(mu)
-                .log_prob(x)
-                .sum(axis=1)
-            )
-        else:
-            print("WARNING: likelihood does not exist, use one of: Gauss, Poisson")
-
+        ll_x_func= self.rnn.get_observation_log_likelihood
+      
         # Run the encoder
         Emean, log_Evar = self.encoder(
             x[:, : self.dim_x, : x.shape[2] - t_forward], k=k
@@ -421,12 +406,7 @@ class VAE(nn.Module):
             min=np.sqrt(self.min_var),
             max=np.sqrt(self.max_var),
         )  # 1,Dz,1
-        eff_std_x = torch.clamp(
-            self.rnn.std_embed_x(self.rnn.R_x).unsqueeze(0).unsqueeze(-1),
-            min=np.sqrt(self.min_var),
-            max=np.sqrt(self.max_var),
-        )  # 1,Dx,1
-
+       
         # Cut some of the data if a CNN was used without padding
 
         x_hat = x.unsqueeze(-1)
@@ -474,9 +454,8 @@ class VAE(nn.Module):
         )
         
         # Get the observation mean and calculate likelihood of the data
-        mean_x = self.rnn.get_observation(Qz, noise_scale=0, v=v)
-
-        ll_x = ll_x_func(x_hat[:, :, 0], mean_x, eff_std_x)
+        mean_x = self.rnn.observation(Qz, v=v)       
+        ll_x = ll_x_func(x_hat[:, :, 0], mean_x)
 
         # Calculate the log weights
         log_w = ll_x + ll_pz - ll_qz
@@ -537,10 +516,10 @@ class VAE(nn.Module):
             )
 
             # Get the observation mean and calculate likelihood of the data
-            mean_x = self.rnn.get_observation(
-                Qz, noise_scale=0, v=v
+            mean_x = self.rnn.observation(
+                Qz, v=v
             )
-            ll_x = ll_x_func(x_hat[:, :, t], mean_x, eff_std_x)
+            ll_x = ll_x_func(x_hat[:, :, t], mean_x)
 
             # Calculate the log weights
             log_w = ll_x + ll_pz - ll_qz
@@ -581,7 +560,7 @@ class VAE(nn.Module):
             )
             Qz = Q_dist.rsample()
 
-            mean_x = self.rnn.get_observation(Qz, noise_scale=0)
+            mean_x = self.rnn.observation(Qz)
 
             ll_pz = (
                 torch.distributions.Normal(loc=prior_mean, scale=eff_std_prior)
@@ -589,7 +568,7 @@ class VAE(nn.Module):
                 .sum(axis=1)
             )
 
-            ll_x = ll_x_func(x_hat[:, :, t], mean_x, eff_std_x)
+            ll_x = ll_x_func(x_hat[:, :, t], mean_x)
             log_w = ll_x
             ll_qz = ll_qz
 
@@ -627,7 +606,6 @@ class VAE(nn.Module):
         u=None,
         k=1,
         resample=False,
-        out_likelihood="Gauss",
         t_forward=0,
         sim_v=False,
     ):
@@ -654,21 +632,8 @@ class VAE(nn.Module):
 
         """
 
-        # Define the data likelihood function
-        if out_likelihood == "Gauss":
-            ll_x_func = (
-                lambda x, mu, sd: torch.distributions.Normal(loc=mu, scale=sd)
-                .log_prob(x)
-                .sum(axis=1)
-            )
-        elif out_likelihood == "Poisson":
-            ll_x_func = (
-                lambda x, mu, sd: torch.distributions.Poisson(mu)
-                .log_prob(x)
-                .sum(axis=1)
-            )
-        else:
-            print("WARNING: likelihood does not exist, use one of: Gauss, Poisson")
+        # Define the data likelihood function 
+        ll_x_func= self.rnn.get_observation_log_likelihood
 
         # Project and clamp the variances
         eff_std_prior = torch.clamp(
@@ -715,8 +680,8 @@ class VAE(nn.Module):
         Qz = Q_dist.rsample()
 
         # Get the observation mean and calculate likelihood of the data
-        mean_x = self.rnn.get_observation(Qz, noise_scale=0)
-        ll_x = ll_x_func(x_hat[:, :, 0], mean_x, eff_std_x)
+        mean_x = self.rnn.observation(Qz, v=v)       
+        ll_x = ll_x_func(x_hat[:, :, 0], mean_x)
 
         # Calculate the log weights
         log_w = ll_x
@@ -756,9 +721,8 @@ class VAE(nn.Module):
             Qz = Q_dist.rsample()
 
             # Get the observation mean and calculate likelihood of the data
-            mean_x = self.rnn.get_observation(Qz, noise_scale=0)
-
-            ll_x = ll_x_func(x_hat[:, :, t], mean_x, eff_std_x)
+            mean_x = self.rnn.observation(Qz, v=v)       
+            ll_x = ll_x_func(x_hat[:, :, t], mean_x)
 
             # Calculate the log weights
             log_w = ll_x
@@ -845,9 +809,8 @@ class VAE(nn.Module):
         self.eval()
 
         # define the data likelihood function
-        ll_x_func = (
-            lambda x, mu: torch.distributions.Poisson(mu).log_prob(x).sum(axis=1)
-        )
+        ll_x_func= self.rnn.get_observation_log_likelihood
+
 
         # Run the encoder
         Emean, log_Evar = self.encoder(x[:, : self.dim_x, :t_held_in], k=k)  # Bs,Dx,T,K
@@ -921,11 +884,8 @@ class VAE(nn.Module):
         )
 
         # Get the observation mean and calculate likelihood of the data
-        mean_x = self.rnn.get_observation(Qz, noise_scale=0, v=v).squeeze(
-            -2
-        )
+        mean_x = self.rnn.observation(Qz, v=v)       
         ll_x = ll_x_func(x_hat[:, :, 0], mean_x[:, : x_hat.shape[1]])
-
         # Calculate the log weights
         log_w = ll_x + ll_pz - ll_qz
         vs = [v.squeeze(2)]
@@ -984,11 +944,9 @@ class VAE(nn.Module):
             )
 
             # Get the observation mean and calculate likelihood of the data
-            mean_x = self.rnn.get_observation(
-                Qz, noise_scale=0, v=v
-            )
+            mean_x = self.rnn.observation(Qz, v=v)       
             ll_x = ll_x_func(x_hat[:, :, t], mean_x[:, : x_hat.shape[1]])
-
+            
             # Calculate the log weights
             log_w = ll_x + ll_pz - ll_qz
             log_ws.append(log_w)
@@ -1022,11 +980,8 @@ class VAE(nn.Module):
             )
             Qz = Q_dist.rsample()
 
-            mean_x = self.rnn.get_observation(
-                Qz, noise_scale=0, v=v
-            )
-
-            ll_x = ll_x_func(x_hat[:, :, t], mean_x[:, : x_hat.shape[1]])
+            mean_x = self.rnn.observation(Qz, v=v)       
+            ll_x = ll_x_func(x_hat[:, :, 0], mean_x[:, : x_hat.shape[1]])
             log_w = ll_x
             ll_qz = ll_qz
 
@@ -1117,8 +1072,8 @@ class VAE(nn.Module):
         Qzs_filt = torch.stack(Qzs_filt).permute(1, 2, 0, 3)
         Qzs_sm = Qzs_sm.permute(1, 2, 0, 3)
         vs = torch.stack(vs).permute(1, 2, 0, 3)
-        Xs_filt = self.rnn.get_observation(Qzs_filt, noise_scale=0, v=vs)
-        Xs_sm = self.rnn.get_observation(Qzs_sm, noise_scale=0, v=vs)
+        Xs_filt = self.rnn.observation(Qzs_filt, v=vs)
+        Xs_sm = self.rnn.observation(Qzs_sm, v=vs)
 
         return Qzs_filt, Qzs_sm, Xs_filt, Xs_sm
 

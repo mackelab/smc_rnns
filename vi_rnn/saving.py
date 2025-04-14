@@ -164,10 +164,11 @@ def load_model(name, load_encoder=True, backward_compat=False):
         else:
             vae_params["rnn_params"]["readout_from"] = "z"
 
-        if vae_params["rnn_params"]["identity_readout"]:
-            vae_params["rnn_params"]["observation"] = "one_to_one"
-        elif "observation" not in vae_params["rnn_params"]:
-            vae_params["rnn_params"]["observation"] = "affine"
+        if "observation" not in vae_params["rnn_params"]:
+            if vae_params["rnn_params"]["identity_readout"]:
+                vae_params["rnn_params"]["observation"] = "one_to_one"
+            else:
+                vae_params["rnn_params"]["observation"] = "affine"
 
         if (
             vae_params["rnn_params"]["activation"] == "relu"
@@ -177,7 +178,7 @@ def load_model(name, load_encoder=True, backward_compat=False):
             vae_params["rnn_params"]["activation"] = "clipped_relu"
 
         if "out_nonlinearity" not in vae_params["rnn_params"]:
-            if training_params["observation_likelihood"] == "Gauss":
+            if "observation_likelihood"in training_params and training_params["observation_likelihood"] == "Gauss":
                 vae_params["rnn_params"]["obs_nonlinearity"] = "identity"
             elif "obs_rectify" in vae_params:
                 vae_params["rnn_params"]["obs_nonlinearity"] = vae_params.pop("obs_rectify")
@@ -201,7 +202,10 @@ def load_model(name, load_encoder=True, backward_compat=False):
             training_params["loss_f"] = "bs_smc"
         elif training_params["loss_f"] == "opt_VGTF":
             training_params["loss_f"] = "opt_smc"
- 
+
+        if "observation_likelihood" in training_params:
+            vae_params["rnn_params"]["obs_likelihood"]=training_params.pop("observation_likelihood")
+
     model = VAE(vae_params)
 
     d = torch.load(state_dict_file_rnn, map_location=torch.device("cpu"))

@@ -118,4 +118,4 @@ for i in range(n_repeats):
     print("True noise: " + str(Rz))
     print("Inferred diag noise std:")
     vae = orthogonalise_network(vae)
-    print(vae.rnn.std_embed_z(vae.rnn.R_z).detach().numpy())
+    print(vae.rnn.std_embed_z(vae.rnn.R_z).detach().cpu().numpy())

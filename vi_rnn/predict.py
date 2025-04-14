@@ -4,7 +4,7 @@ from vi_rnn.initialize_parameterize import chol_cov_embed, full_cov_embed
 
 
 def get_initial_state(
-    vae, u, x=None, initial_state="prior_sample", optimal_proposal=False
+    vae, u, x=None, initial_state="prior_sample", optimal_proposal=False, k=1
 ):
 
     if x is not None:
@@ -13,7 +13,8 @@ def get_initial_state(
     with torch.no_grad():
 
         # get prior mean and std
-        prior_mean = vae.rnn.get_initial_state(u[:, :, 0]).unsqueeze(2)  # Bs, Dz,1
+        prior_mean = vae.rnn.get_initial_state(u[:, :, 0]).unsqueeze(-1)
+        prior_mean = prior_mean.expand(*prior_mean.shape[:2],k)
         if initial_state == "prior_sample":
             if vae.rnn.params["noise_z"] == "full":
                 chol_prior_t0 = chol_cov_embed(vae.rnn.R_z_t0)
@@ -138,7 +139,6 @@ def get_initial_state(
                 raise ValueError(
                     "initial state not recognized, use prior_sample, prior_mean, posterior_sample or posterior_mean"
                 )
-
     return z0
 
 
@@ -148,8 +148,6 @@ def predict(
     x=None,
     dur=None,
     initial_state="prior_sample",
-    observation_model="Gauss",
-    optimal_proposal=False,
     sim_v=True,
     cut_off=0,
     max_fr = 10000.,
@@ -174,6 +172,11 @@ def predict(
         data_gen (np.array; batch_size x dim_x x dim_T): generated data
         rates (np.array; batch_size x dim_x x dim_T): rates underlying generated data
     """
+    if vae.has_encoder:
+        optimal_proposal = False
+    else:
+        optimal_proposal = True
+
     with torch.no_grad():
         if len(x.shape) == 2:
             x = x.unsqueeze(0) # add trial dim if not used
@@ -205,13 +208,10 @@ def predict(
                 time_steps=dur, z0=z0, u=u, noise_scale=1, sim_v=sim_v, cut_off=cut_off, k=k
             )
             v = u.unsqueeze(-1)
-        rates = (
-            (vae.rnn.get_observation(Z, v=v, noise_scale=0))
-            .cpu()
-            .detach()
-            .numpy()[:, :, :, 0]
-        )
-
+        rates,data_gen = vae.rnn.get_observation(Z, v=v)
+          
+        
+        """
         if observation_model == "Gauss":
             data_gen = (
                 (vae.rnn.get_observation(Z, v=v, noise_scale=1))
@@ -224,7 +224,6 @@ def predict(
             rates = np.minimum(rates,max_fr)
             np.nan_to_num(rates,nan=max_fr, copy=False)
             data_gen = np.random.poisson(rates.astype("float64")).astype("float64")
-
-        Z = Z.cpu().detach().numpy()[:, :, :, 0]
+        """
 
     return Z, data_gen, rates

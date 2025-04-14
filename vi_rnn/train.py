@@ -238,7 +238,6 @@ def train_VAE(
                     u=stim,
                     k=training_params["k"],
                     resample=training_params["resample"],
-                    out_likelihood=training_params["observation_likelihood"],
                     t_forward=training_params["t_forward"],
                     sim_v=training_params["sim_v"],
                 )
@@ -258,7 +257,6 @@ def train_VAE(
                     u=stim,
                     k=training_params["k"],
                     resample=training_params["resample"],
-                    out_likelihood=training_params["observation_likelihood"],
                     t_forward=training_params["t_forward"],
                     sim_v=training_params["sim_v"],
                 )
@@ -297,8 +295,6 @@ def train_VAE(
         batch_ll_x /= -len(dataloader)
         batch_loss /= len(dataloader)
 
-        noise_z = vae.rnn.std_embed_z(vae.rnn.R_z).detach()
-        noise_x = vae.rnn.std_embed_x(vae.rnn.R_x).detach()
         alpha = torch.mean(alphas).item()
 
         if store_train_stats:
@@ -307,12 +303,10 @@ def train_VAE(
             training_params["ll"].append(batch_ll)
             training_params["H"].append(batch_h_loss)
             training_params["loss"].append(batch_loss)
-            training_params["noise_z"].append(noise_z)
-            training_params["noise_x"].append(noise_x)
             training_params["alphan"].append(alpha)
 
         print(
-            "epoch {} loss: {:.4f}, ll: {:.4f}, ll_x: {:.4f}, ll_z: {:.4f} H: {:.4f}, alpha: {:.2f}, lr: {:.6f}, N_z: {:.4f}, N_x: {:.4f}".format(
+            "epoch {} loss: {:.4f}, ll: {:.4f}, ll_x: {:.4f}, ll_z: {:.4f} H: {:.4f}, alpha: {:.2f}, lr: {:.6f}".format(
                 i + 1,
                 batch_loss,
                 batch_ll,
@@ -321,8 +315,6 @@ def train_VAE(
                 batch_h_loss,
                 alpha,
                 scheduler.get_last_lr()[0],
-                noise_z.mean().item(),
-                noise_x.mean().item(),
             )
         )
 
@@ -335,8 +327,6 @@ def train_VAE(
                     "likelihood_latent": batch_ll_z,
                     "entropy": batch_h_loss,
                     "alpha": alpha,
-                    "noise_z": noise_z.mean().item(),
-                    "noise_x": noise_x.mean().item(),
                 }
             )
 
@@ -353,7 +343,8 @@ def train_VAE(
     if sync_wandb:
         # store to wandb
         print(fname + "_state_dict_enc.pkl")
-        wandb.save(fname + "_state_dict_enc.pkl")
+        if vae.has_encoder:
+            wandb.save(fname + "_state_dict_enc.pkl")
         wandb.save(fname + "_state_dict_rnn.pkl")
         wandb.save(fname + "_vae_params.pkl")
         wandb.save(fname + "_task_params.pkl")

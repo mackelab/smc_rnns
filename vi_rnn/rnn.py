@@ -33,16 +33,26 @@ class RNN(nn.Module):
         # Initialise noise
         # ------
 
+        # Gaussian observations
+        if params['obs_likelihood'] == "Gauss":
+            self.observation_distribution=lambda x, noise_scale=1:torch.distributions.Normal(loc=x, scale=self.std_embed_x(self.R_x).view(1,self.d_x,*([1]*len(x.shape[2:])))*noise_scale)
+        
+        # Poisson observations
+        elif params['obs_likelihood'] == "Poisson":
+            self.observation_distribution=lambda x, noise_scale=None:torch.distributions.Poisson(x)
+        else:
+            raise ValueError("observation_likelihood not recognised, use Gauss or Poisson")       
+        
+        self.get_observation_log_likelihood = lambda x_hat, x,noise_scale=1: self.observation_distribution(x,noise_scale=noise_scale).log_prob(x_hat).sum(axis=1)
+        self.get_observation_sample = lambda x,noise_scale=1: self.observation_distribution(x,noise_scale).sample()
+        self.obs_likelihood=params['obs_likelihood']
+       
         if "noise_x" in params.keys():
             # Observation noise (not used when using Poisson observations)
             self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
                 params["noise_x"], self.d_x, params["init_noise_x"], params["train_noise_x"]
             )
-        else:
-            self.R_x = torch.zeros(self.d_x, self.d_x)
-            self.std_embed_x = lambda x: torch.diag(x).to(device=self.R_z.device)
-            self.var_embed_x = lambda x: x.to(device=self.R_z.device)
-
+      
         # Latent states transition noise
         self.R_z, self.std_embed_z, self.var_embed_z = init_noise(
             params["noise_z"], self.d_z, params["init_noise_z"], params["train_noise_z"]
@@ -253,12 +263,8 @@ class RNN(nn.Module):
             return Z, V
         return Z
 
-    def get_rates(self, z, u=None):
-        """transform the latent states to the neuron activity"""
-        R = self.transition.get_rates(z, u=u)
-        return R
 
-    def get_observation(self, z, v=None, noise_scale=0):
+    def get_observation(self, z, v=None, noise_scale=1):
         """
         Generate observations from the latent states
         Args:
@@ -268,14 +274,9 @@ class RNN(nn.Module):
         Returns:
             X (torch.tensor; n_trials x dim_x x time_steps x k): observations
         """
-        X = self.observation(z,v)
-    
-        X += (
-            noise_scale
-            * self.normal.sample(X.shape)
-            * self.std_embed_x(self.R_x).view(1,-1,*([1]*len(X.shape[2:])))
-        )
-        return X
+        X_mean = self.observation(z,v)
+        X_sample = self.get_observation_sample(X_mean,noise_scale=noise_scale)
+        return X_mean,X_sample
 
 class One_to_One_observation(nn.Module):
     """
@@ -454,7 +455,10 @@ class Transition_LowRank(nn.Module):
         elif nonlinearity == "identity":
             self.nonlinearity = lambda x, h: x - h
             self.dnonlinearity = lambda x: torch.ones_like(x)
-
+        else:
+            raise ValueError(
+                "nonlinearity not recognised, use relu, clipped_relu, tanh, or identity"
+            )   
         # time constants
         self.decay_param = nn.Parameter(torch.log(-torch.log(torch.ones(1) * decay)))
 
@@ -585,7 +589,10 @@ class Transition_FullRank(nn.Module):
             print("using identity activation")
             self.nonlinearity = lambda x, h: x - h
             self.dnonlinearity = lambda x: torch.ones_like(x)
-
+        else:
+            raise ValueError(
+                "nonlinearity not recognised, use relu, clipped_relu, tanh, or identity"
+            )   
         # time constants
         self.decay_param = nn.Parameter(torch.log(-torch.log(torch.ones(1) * decay)))
 
