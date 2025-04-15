@@ -174,4 +174,4 @@ def generate(
 
         rates, data_gen = vae.rnn.get_observation(Z, v=v)
 
-    return Z, data_gen, rates
+    return Z, v, data_gen, rates

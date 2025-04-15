@@ -50,7 +50,7 @@ def eval_kl_pse(
             u = u.unsqueeze(0)
         dur = min(data.shape[2], 10000)
         data = data[:, :, :dur]
-        _, data_gen, _ = generate(
+        _, _,  data_gen, _ = generate(
             vae,
             u=u,
             x=data,

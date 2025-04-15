@@ -530,7 +530,7 @@ class RDM_Teacher(Dataset):
         """
         self.R_z = task_params["R_z"]
         self.R_x = task_params["R_x"]
-
+        self.task_params = task_params
         # obtain teacher RNNs stimuli
         reaching = RDM(task_params_teacher)
         Reaching_loader = DataLoader(

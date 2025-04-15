@@ -224,6 +224,8 @@ def load_model(name, load_encoder=True, backward_compat=False):
             vae_params["rnn_params"]["obs_likelihood"] = training_params.pop(
                 "observation_likelihood"
             )
+        if "obs_likelihood" not in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["obs_likelihood"]="Gauss"
         if "sim_v" in training_params:
             vae_params["rnn_params"]["simulate_input"] = training_params.pop("sim_v")
         elif "simulate_input" not in vae_params["rnn_params"]:

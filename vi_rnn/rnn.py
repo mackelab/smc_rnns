@@ -43,13 +43,6 @@ class RNN(nn.Module):
                     * noise_scale,
                 )
             )
-        if "noise_x" in params.keys():
-            self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
-                params["noise_x"],
-                self.dim_x,
-                params["init_noise_x"],
-                params["train_noise_x"],
-            )
 
         # Poisson observations
         elif params["obs_likelihood"] == "Poisson":
@@ -60,7 +53,14 @@ class RNN(nn.Module):
             raise ValueError(
                 "observation_likelihood not recognised, use Gauss or Poisson"
             )
-
+        if "noise_x" in params.keys():
+            self.R_x, self.std_embed_x, self.var_embed_x = init_noise(
+                params["noise_x"],
+                self.dim_x,
+                params["init_noise_x"],
+                params["train_noise_x"],
+            )
+            
         # sampling and likelihood functions
         self.get_observation_log_likelihood = (
             lambda x_hat, x, noise_scale=1: self.observation_distribution(

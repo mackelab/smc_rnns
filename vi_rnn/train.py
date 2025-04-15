@@ -169,7 +169,7 @@ def train_VAE(
                         data = data.unsqueeze(0)
                         u = u.unsqueeze(0)
                     dur = min(data.shape[2], 1000)
-                    Z, data_gen, _ = generate(
+                    Z, _, data_gen, _ = generate(
                         vae,
                         u=u,
                         x=data,
