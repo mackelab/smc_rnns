@@ -60,7 +60,7 @@ class RNN(nn.Module):
                 params["init_noise_x"],
                 params["train_noise_x"],
             )
-            
+
         # sampling and likelihood functions
         self.get_observation_log_likelihood = (
             lambda x_hat, x, noise_scale=1: self.observation_distribution(
@@ -138,13 +138,13 @@ class RNN(nn.Module):
                 obs_nonlinearity=params["obs_nonlinearity"],
             )
         elif params["observation"] == "affine":
-            if self.readout_from == "z_andim_v":
+            if self.readout_from == "z_and_v":
                 dim_v = self.dim_u
             elif self.readout_from == "z":
                 dim_v = 0
             else:
                 raise ValueError(
-                    "readout_from not recognised, use z_andim_v, or z (for an affine observation model)"
+                    "readout_from not recognised, use z_and_v, or z (for an affine observation model)"
                 )
             self.observation = Affine_observation(
                 dim_x=self.dim_x,
@@ -443,7 +443,7 @@ class Affine_observation(nn.Module):
                 "obs_nonlinearity not recognised, use exp, relu, softplus, or identity"
             )
 
-        # readout from z_andim_v
+        # readout from z_and_v
         if self.dim_v > 0:
             self.cat_zv = lambda z, v: torch.concat(
                 [(v.repeat(*([1] * len(v.shape[:-1])), z.shape[-1])), z], dim=1
