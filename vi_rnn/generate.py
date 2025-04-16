@@ -133,7 +133,7 @@ def generate(
         u (torch.tensor; batch_size x dim_u x dim_T): inputs
         x (torch.tensor; batch_size x dim_x x dim_T): data
         dur (int): duration of the simulation
-        initial_state (str): initial state of the model
+        initial_state (str or torch.tensor;): initial state of the model
         cut_off (int): cut off for the inputs
         k: number of particles
     Returns:
@@ -150,7 +150,10 @@ def generate(
         if len(x.shape) == 2:
             x = x.unsqueeze(0)  # add trial dim if not used
         if u is None:
-            u = torch.zeros(x.shape[0], 0, x.shape[2])
+            if dur is not None:
+                u = torch.zeros(x.shape[0], 0, dur)
+            else:
+                u = torch.zeros(x.shape[0], 0, x.shape[2])
         if dur is None:
             dur = u.shape[2]
         else:

@@ -74,6 +74,8 @@ rnn_params = {
     "weight_dist": "uniform",
     "initial_state": "trainable",
     "obs_nonlinearity": "identity",
+    "obs_likelihood": "Gauss",
+    "simulate_input": False,
 }
 
 
@@ -92,6 +94,7 @@ training_params = {
     "resample": "systematic",  # , multinomial or none"
     "run_eval": True,
     "smooth_at_eval": False,
+    "init_state_eval": "posterior_sample",
 }
 
 

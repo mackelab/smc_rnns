@@ -50,7 +50,7 @@ def eval_kl_pse(
             u = u.unsqueeze(0)
         dur = min(data.shape[2], 10000)
         data = data[:, :, :dur]
-        _, _,  data_gen, _ = generate(
+        _, _, data_gen, _ = generate(
             vae,
             u=u,
             x=data,
@@ -59,7 +59,7 @@ def eval_kl_pse(
             cut_off=cut_off,
         )
         data = data.permute(0, 2, 1).reshape(-1, vae.dim_x)
-        data_gen = data_gen[:,:,:,0].permute(0, 2, 1).reshape(-1, vae.dim_x)
+        data_gen = data_gen[:, :, :, 0].permute(0, 2, 1).reshape(-1, vae.dim_x)
         # potentially smooth
         if smooth_at_eval:
             window = signal.windows.hann(15)

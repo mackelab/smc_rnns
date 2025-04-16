@@ -178,11 +178,11 @@ def train_VAE(
                         cut_off=0,
                     )
                     plt.figure()
-                    plt.plot(Z[0,:,:,0].detach().cpu().numpy().T)
+                    plt.plot(Z[0, :, :, 0].detach().cpu().numpy().T)
                     plt.xlim(0)
                     wandb.log({"latent" + str(i): plt})
                     plt.figure()
-                    plt.plot(data_gen[0,:,:,0].detach().cpu().numpy().T)
+                    plt.plot(data_gen[0, :, :, 0].detach().cpu().numpy().T)
                     wandb.log({"reconstruction" + str(i): plt})
 
         # training

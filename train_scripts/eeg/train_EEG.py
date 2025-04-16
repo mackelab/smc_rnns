@@ -91,7 +91,7 @@ for _ in range(n_runs):
         "loss_f": "opt_smc",
         "run_eval": True,
         "smooth_at_eval": True,
-        "init_state_eval": "posterior_sample"
+        "init_state_eval": "posterior_sample",
     }
 
     VAE_params = {

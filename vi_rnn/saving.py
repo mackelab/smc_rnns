@@ -28,15 +28,22 @@ def save_model(model, training_params, task_params, name=None, directory=None):
         elif directory[-1] != "/":
             directory += "/"
 
+        if "enc_architecture" in model.vae_params:
+            enc = model.vae_params["enc_architecture"] + "_"
+
+        else:
+            enc = ""
         # Generate a name
         name = (
             task_params["name"]
             + "_"
-            + model.vae_params["enc_architecture"]
+            + enc
+            + model.vae_params["rnn_params"]["transition"]
             + "_"
-            + model.vae_params["rnn_architecture"]
-            + "_Z_Date_"
+            + model.vae_params["rnn_params"]["observation"]
+            + "_dim_z_"
             + str(model.dim_z)
+            + "_date_"
             + datetime.datetime.now().strftime("%Y_%m_%d_T_%H_%M_%S")
         )
         print("Saving model as " + str(name))
@@ -128,10 +135,6 @@ def load_model(name, load_encoder=True, backward_compat=False):
             vae_params["rnn_params"]["train_noise_z_t0"] = vae_params["rnn_params"].pop(
                 "train_noise_prior_t0"
             )
-        # if "prior_architecture" in vae_params:
-        #    vae_params["rnn_architecture"] = vae_params.pop("prior_architecture")
-        # if vae_params["rnn_architecture"] == "PLRNN":
-        #    vae_params["rnn_architecture"] = "LRRNN"
 
         if "scalar_noise_x" in vae_params["rnn_params"]:
             if vae_params["rnn_params"]["scalar_noise_x"] == "Cov":
@@ -225,7 +228,8 @@ def load_model(name, load_encoder=True, backward_compat=False):
                 "observation_likelihood"
             )
         if "obs_likelihood" not in vae_params["rnn_params"]:
-            vae_params["rnn_params"]["obs_likelihood"]="Gauss"
+            vae_params["rnn_params"]["obs_likelihood"] = "Gauss"
+
         if "sim_v" in training_params:
             vae_params["rnn_params"]["simulate_input"] = training_params.pop("sim_v")
         elif "simulate_input" not in vae_params["rnn_params"]:

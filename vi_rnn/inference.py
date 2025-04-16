@@ -169,7 +169,7 @@ def filtering_posterior_optimal_proposal(vae, x, u, k=1, resample="systematic"):
         # w_chol = torch.linalg.cholesky(w_upd)
         # w_dist = torch.distributions.MultivariateNormal(loc=w_mean.permute(0, 2, 1), scale_tril=w_chol#)
         # ll_w = w_dist.log_prob(x[:, :, t].permute(0, 2, 1))
-        
+
         # Store some quantities
         log_ws.append(torch.logsumexp(log_w, axis=-1) - np.log(k))
         Qzs.append(Qz)
@@ -196,7 +196,7 @@ def filtering_posterior(
     x,
     u=None,
     k=1,
-    resample="none",
+    resample="systematic",
     t_forward=0,
 ):
     """
@@ -456,7 +456,7 @@ def filtering_posterior_bootstrap(
     x,
     u=None,
     k=1,
-    resample=False,
+    resample="systematic",
     t_forward=0,
 ):
     """
@@ -581,19 +581,6 @@ def filtering_posterior_bootstrap(
     return log_likelihood, Qzs, empty
 
 
-def posterior(
-    vae,
-    x,
-    u=None,
-    k=1,
-    t_held_in=0,
-    t_forward=0,
-    resample="systematic",
-    marginal_smoothing=False,
-):
-    return vae.predict_NLB(x, u, k, t_held_in, t_forward, resample, marginal_smoothing)
-
-
 def predict_NLB(
     vae,
     x,
@@ -601,6 +588,7 @@ def predict_NLB(
     k=1,
     t_held_in=None,
     t_forward=0,
+    t_bs=0,
     resample="systematic",
     marginal_smoothing=False,
 ):
@@ -612,7 +600,8 @@ def predict_NLB(
         u (torch.tensor; n_trials x dim_U x time_steps): input stim
         k (int): number of particles
         t_held_in (int): number of time steps where the data / encoder is used
-        t_forward (int): number of time steps to predict forward without using the encoder
+        t_forward (int): number of time steps to predict forward without using the data
+        t_bs (int): number of time steps to predict forward with the bootstrap proposal (no encoder)
         resample (str): resampling method
         marginal_smoothing (bool): whether or not to obtain the marginal latents
 
@@ -633,7 +622,6 @@ def predict_NLB(
 
     if t_held_in is None:
         t_held_in = x.shape[2]
-
     # no need for gradients here
     vae.eval()
 
@@ -676,13 +664,15 @@ def predict_NLB(
 
     # Get the prior mean and observation mean
     if u is None:
-        u = torch.zeros(x.shape[0], vae.dim_u, x.shape[2]).to(x.device)
+        u = torch.zeros(bs, vae.dim_u, time_steps, 1).to(x.device)
+    else:
+        u = u.unsqueeze(-1)  # add particle dimension
+
     # Get the initial prior mean
     if vae.rnn.simulate_input:
         v = torch.zeros(bs, vae.dim_u, 1, device=x.device)
     else:
-        v = u[:, :, 0].unsqueeze(-1)  # add particle dimension
-
+        v = u[:, :, 0]
     prior_mean = (
         vae.rnn.get_initial_state(v[:, :, 0]).unsqueeze(2).expand(bs, vae.dim_z, k)
     )
@@ -712,13 +702,11 @@ def predict_NLB(
     ll_x = ll_x_func(x_hat[:, :, 0], mean_x[:, : x_hat.shape[1]])
     # Calculate the log weights
     log_w = ll_x + ll_pz - ll_qz
-    vs = [v.squeeze(2)]
+    vs = [v]
 
     # Append the log weights and log likelihoods
     log_ws.append(log_w)
     Qzs.append(Qz)
-    t_bs = 0
-    u = u.unsqueeze(-1)  # add particle dimension
 
     # Loop through the time steps
     for t in range(1, t_held_in):
@@ -762,6 +750,7 @@ def predict_NLB(
         log_w = ll_x + ll_pz - ll_qz
         log_ws.append(log_w)
         Qzs.append(Qz)
+
     for t in range(t_held_in, t_held_in + t_bs):
         Qz = resample_f(Qz, log_w)
         Qzs_filt.append(Qz)
@@ -841,11 +830,11 @@ def predict_NLB(
 
     # Use forward samples for the last n_forward steps
 
-    for t in range(t_held_in, t_held_in + t_forward):
+    for t in range(t_held_in, t_held_in + t_bs + t_forward):
         prior_mean = vae.rnn.transition(Qz, v=v)
         if vae.rnn.simulate_input:
             v = vae.rnn.transition.step_input(v, torch.zeros_like(v))
-        vs.append(v.squeeze(2))
+        vs.append(v)
 
         Q_dist = torch.distributions.Normal(
             loc=prior_mean, scale=torch.sqrt(eff_var_prior)
