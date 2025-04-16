@@ -3,7 +3,7 @@ Code accompanying [Inferring stochastic low-rank recurrent neural networks from 
 
 Matthijs Pals, A Erdem Sağtekin, Felix Pei, Manuel Gloeckler and Jakob H Macke, 2024
 
-### Check out the tutorial! 
+### Check out the [tutorials](https://github.com/mackelab/smc_rnns/blob/main/tutorial/tutorial_continuous.ipynb)! 
 Create a conda environment:
 
 `cd smc_rnns`
