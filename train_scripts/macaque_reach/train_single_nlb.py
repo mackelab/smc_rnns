@@ -113,7 +113,7 @@ def train(
     for i in range(0, n_epochs, step):
         for item in (chkpt_dir / "last").iterdir():
             item.unlink()
-
+        print(i)
         training_params["n_epochs"] = min(i + step, n_epochs)
         out_dir = str(chkpt_dir / "last")
         if not out_dir.endswith("/"):
@@ -159,7 +159,7 @@ def train(
                 plt.close()
 
         with h5py.File(chkpt_dir / "last" / "metrics.h5", "w") as h5f:
-            h5f.create_dataset("loss", data=training_params["loss"][-1])
+            h5f.create_dataset("loss", data=-training_params["ll"][-1])
             if len(nlb_results) > 0:
                 for k, v in nlb_results[-1].items():
                     h5f.create_dataset(k, data=v)
@@ -175,10 +175,10 @@ def train(
                 elif item.is_dir():
                     shutil.copytree(item, chkpt_dir / "best" / item.name)
 
-        if len(training_params["loss"]) >= patience * 2:
-            prev_best_loss = np.min(training_params["loss"][:-patience])
+        if len(training_params["ll"]) >= patience * 2:
+            prev_best_loss = -np.max(training_params["ll"][:-patience])
             if not np.any(
-                np.array(training_params["loss"][-patience:]) < prev_best_loss
+                -np.array(training_params["ll"][-patience:]) < prev_best_loss
             ):
                 print(
                     f"No improvement for the last {patience} iters. Stopping early..."
@@ -188,7 +188,7 @@ def train(
             print(f"Alpha dropped below 0.005. Stopping early...")
             break
 
-    return training_params["loss"], nlb_results
+    return training_params["ll"], nlb_results
 
 
 if __name__ == "__main__":

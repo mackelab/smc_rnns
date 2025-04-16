@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - enc_params: cnn_causal
+  - enc_params: cnn
   - rnn_params: lrrnn
 
 dim_x: ${dataset.n_held_in}
@@ -9,4 +9,3 @@ dim_u: ${dataset.u}
 dim_N: 512
 dim_x_hat: ${dataset.n}
 enc_architecture: CNN
-rnn_architecture: LRRNN

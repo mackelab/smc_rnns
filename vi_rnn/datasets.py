@@ -4,8 +4,6 @@ import numpy as np
 import h5py
 from pathlib import Path
 
-# TODO: add inputs to every dataset class
-
 
 class Basic_dataset(Dataset):
     def __init__(self, task_params, data, data_eval=None, stim=None, stim_eval=None):
@@ -78,7 +76,9 @@ class Basic_dataset_with_trials(Dataset):
         if stim_eval is not None:
             self.stim_eval = torch.from_numpy(stim_eval)
         else:
-            self.stim_eval = self.stim
+            self.stim_eval = torch.zeros(
+                self.data_eval.shape[0], 0, self.data_eval.shape[2]
+            )
 
     def __len__(self):
         """Return number of trials in an epoch"""
@@ -530,7 +530,7 @@ class RDM_Teacher(Dataset):
         """
         self.R_z = task_params["R_z"]
         self.R_x = task_params["R_x"]
-
+        self.task_params = task_params
         # obtain teacher RNNs stimuli
         reaching = RDM(task_params_teacher)
         Reaching_loader = DataLoader(

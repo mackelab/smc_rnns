@@ -8,6 +8,5 @@ cuda: true
 k: 64
 loss_f: smc
 resample: systematic # multinomial or none
-observation_likelihood: Poisson # observation likelihood
 t_forward: ${dataset.t_forward}
 run_eval: false

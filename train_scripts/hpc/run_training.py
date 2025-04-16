@@ -31,7 +31,7 @@ enc_params = {
     "n_channels": [128, 64],
     "init_scale": 0.1,
     "constant_var": False,
-    "pading_location": "causal",
+    "padding_location": "causal",
 }
 
 enc_params["first_layer"] = wandb.config.first_layer
@@ -39,6 +39,8 @@ enc_params["init_kernel_sizes"] = [enc_params["first_layer"], 11, 1]
 
 # initialise prior
 rnn_params = {
+    "transition": "low_rank",
+    "observation": "affine",
     "train_noise_z": True,
     "train_noise_z_t0": True,
     "init_noise_z": 0.1,
@@ -54,12 +56,15 @@ rnn_params = {
     "train_neuron_bias": True,
     "weight_dist": "uniform",
     "initial_state": "trainable",
-    "out_nonlinearity": "softplus",
+    "obs_nonlinearity": "softplus",
+    "obs_likelihood": "Poisson",
+    "simulate_input": False,
 }
 
 # initialise training parameters
 training_params = {
     "smooth_at_eval": False,
+    "init_state_eval": "posterior_sample",
     "run_eval": True,
     "t_forward": 0,
     "lr": 1e-3,
@@ -74,7 +79,6 @@ training_params = {
     "k": 64,
     "loss_f": "smc",
     "resample": "systematic",  # , multinomial or none"
-    "observation_likelihood": "Poisson",  # observation likelihood
 }
 
 training_params["n_epochs"] = wandb.config.n_epochs
@@ -107,7 +111,6 @@ VAE_params = {
     "dim_N": dim_N,
     "enc_architecture": "CNN",
     "enc_params": enc_params,
-    "rnn_architecture": "LRRNN",
     "rnn_params": rnn_params,
 }
 

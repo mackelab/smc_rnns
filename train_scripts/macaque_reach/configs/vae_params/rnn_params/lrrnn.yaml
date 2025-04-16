@@ -1,3 +1,5 @@
+transition: low_rank
+observation: affine
 train_noise_z: true
 train_noise_z_t0: true
 init_noise_z: .05
@@ -13,4 +15,6 @@ train_obs_weights: true
 train_neuron_bias: true
 weight_dist: uniform
 initial_state: zero
-out_nonlinearity: softplus
+obs_nonlinearity: softplus
+obs_likelihood: Poisson
+simulate_input: false

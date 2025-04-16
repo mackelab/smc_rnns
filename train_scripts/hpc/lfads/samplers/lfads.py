@@ -172,7 +172,9 @@ class LFADSControllerSampler:
     def sample_controller(self, n: int, t: int):
         alphas = torch.exp(-1.0 / torch.exp(self.co_prior.logtaus))
         init_mean = torch.zeros(n, self.co_prior.logtaus.shape[0])
-        init_std = torch.exp(0.5 * (self.co_prior.lognvars - torch.log(1 - alphas**2)))
+        init_std = torch.exp(
+            0.5 * (self.co_prior.lognvars - torch.log(1 - alphas ** 2))
+        )
         samples = [
             torch.normal(
                 init_mean,

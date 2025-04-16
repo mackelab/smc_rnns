@@ -52,6 +52,8 @@ for _ in range(n_runs):
 
     # initialise prior
     rnn_params = {
+        "transition": "full_rank",
+        "observation": "affine",
         "train_noise_x": True,
         "train_noise_z": True,
         "train_noise_z_t0": True,
@@ -70,9 +72,10 @@ for _ in range(n_runs):
         "train_neuron_bias": True,
         "weight_dist": "uniform",
         "initial_state": "trainable",
-        "out_nonlinearity": "identity",
-        "full_rank": True,
+        "obs_nonlinearity": "identity",
+        "obs_likelihood": "Gauss",
         "g": np.sqrt(2),
+        "simulate_input": False,
     }
 
     training_params = {
@@ -90,15 +93,13 @@ for _ in range(n_runs):
         "loss_f": "opt_smc",
         "run_eval": True,
         "smooth_at_eval": True,
+        "init_state_eval": "posterior_sample",
     }
 
     VAE_params = {
         "dim_x": dim_x,
         "dim_z": dim_z,
         "dim_N": dim_N,
-        "enc_architecture": "Inv_Obs",
-        "enc_params": enc_params,
-        "rnn_architecture": "LRRNN",
         "rnn_params": rnn_params,
     }
 

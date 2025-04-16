@@ -6,6 +6,7 @@ sys.path.insert(1, str(Path(__file__).absolute().parent.parent))
 
 from vi_rnn.saving import load_model
 from vi_rnn.datasets import NLBDataset, load_nlb_dataset
+from vi_rnn.inference import predict_NLB
 from nlb_tools.evaluation import evaluate, fit_and_eval_decoder
 import torch
 import numpy as np
@@ -61,7 +62,8 @@ def eval_nlb(
         with torch.no_grad():
             Xs_t = np.concatenate(
                 [
-                    vae.predict_NLB(
+                    predict_NLB(
+                        vae,
                         x_t_chunk,
                         u=u_t_chunk,
                         k=n_particles,
@@ -87,7 +89,8 @@ def eval_nlb(
             )
             Xs_e = np.concatenate(
                 [
-                    vae.predict_NLB(
+                    predict_NLB(
+                        vae,
                         x_e_chunk,
                         u=u_e_chunk,
                         k=n_particles,
@@ -203,7 +206,8 @@ def eval_velocity(
         with torch.no_grad():
             Xs_t = np.concatenate(
                 [
-                    vae.predict_NLB(
+                    predict_NLB(
+                        vae,
                         x_t_chunk,
                         u=u_t_chunk,
                         k=n_particles,
@@ -229,7 +233,8 @@ def eval_velocity(
             )
             Xs_e = np.concatenate(
                 [
-                    vae.predict_NLB(
+                    predict_NLB(
+                        vae,
                         x_e_chunk,
                         u=u_e_chunk,
                         k=n_particles,

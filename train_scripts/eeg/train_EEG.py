@@ -49,7 +49,6 @@ dim_x = task.data.shape[0]
 # ------------------
 for _ in range(n_runs):
     # initialise encoder
-    enc_params = {}
 
     # initialise prior
     rnn_params = {
@@ -62,16 +61,19 @@ for _ in range(n_runs):
         "noise_z": "full",
         "noise_x": "diag",
         "noise_z_t0": "full",
-        "identity_readout": False,
+        "transition": "low_rank",
         "activation": "clipped_relu",
         "decay": 0.9,
-        "readout_from": "z",
-        "train_obs_bias": True,
-        "train_obs_weights": True,
         "train_neuron_bias": True,
         "weight_dist": "uniform",
         "initial_state": "trainable",
-        "out_nonlinearity": "identity",
+        "simulate_input": False,
+        "observation": "affine",
+        "readout_from": "z",
+        "train_obs_bias": True,
+        "train_obs_weights": True,
+        "obs_nonlinearity": "identity",
+        "obs_likelihood": "Gauss",
     }
 
     training_params = {
@@ -89,15 +91,13 @@ for _ in range(n_runs):
         "loss_f": "opt_smc",
         "run_eval": True,
         "smooth_at_eval": True,
+        "init_state_eval": "posterior_sample",
     }
 
     VAE_params = {
         "dim_x": dim_x,
         "dim_z": dim_z,
         "dim_N": dim_N,
-        "enc_architecture": "Inv_Obs",
-        "enc_params": enc_params,
-        "rnn_architecture": "LRRNN",
         "rnn_params": rnn_params,
     }
 

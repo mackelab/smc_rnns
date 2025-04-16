@@ -28,15 +28,22 @@ def save_model(model, training_params, task_params, name=None, directory=None):
         elif directory[-1] != "/":
             directory += "/"
 
+        if "enc_architecture" in model.vae_params:
+            enc = model.vae_params["enc_architecture"] + "_"
+
+        else:
+            enc = ""
         # Generate a name
         name = (
             task_params["name"]
             + "_"
-            + model.vae_params["enc_architecture"]
+            + enc
+            + model.vae_params["rnn_params"]["transition"]
             + "_"
-            + model.vae_params["rnn_architecture"]
-            + "_Z_Date_"
+            + model.vae_params["rnn_params"]["observation"]
+            + "_dim_z_"
             + str(model.dim_z)
+            + "_date_"
             + datetime.datetime.now().strftime("%Y_%m_%d_T_%H_%M_%S")
         )
         print("Saving model as " + str(name))
@@ -61,12 +68,13 @@ def save_model(model, training_params, task_params, name=None, directory=None):
         pickle.dump(task_params, f)
 
     torch.save(model.rnn.state_dict(), state_dict_file_prior)
-    torch.save(model.encoder.state_dict(), state_dict_file_encoder)
+    if model.has_encoder:
+        torch.save(model.encoder.state_dict(), state_dict_file_encoder)
 
     return directory + name
 
 
-def load_model(name, load_encoder=True):
+def load_model(name, load_encoder=True, backward_compat=False):
     """
     loads a VAE
 
@@ -94,113 +102,171 @@ def load_model(name, load_encoder=True):
     with open(training_params_file, "rb") as f:
         training_params = CPU_Unpickler(f).load()
 
-    # Backwards compatibility
-    if "prior_params" in vae_params:
-        vae_params["rnn_params"] = vae_params.pop("prior_params")
+    if backward_compat:
+        # Backwards compatibility
+        if "prior_params" in vae_params:
+            vae_params["rnn_params"] = vae_params.pop("prior_params")
 
-    if vae_params["enc_architecture"] == "CNN_causal":
-        vae_params["enc_architecture"] = "CNN"
-        vae_params["enc_params"]["padding_location"] = "causal"
+        if (
+            "enc_architecture" in vae_params
+            and vae_params["enc_architecture"] == "CNN_causal"
+        ):
+            vae_params["enc_architecture"] = "CNN"
+            vae_params["enc_params"]["padding_location"] = "causal"
 
-    if "padding_location" not in vae_params["enc_params"]:
-        vae_params["enc_params"]["padding_location"] = "causal"
+        if (
+            "enc_params" in vae_params
+            and "padding_location" not in vae_params["enc_params"]
+        ):
+            vae_params["enc_params"]["padding_location"] = "causal"
 
-    if "readout_v " in vae_params["rnn_params"]:
-        _ = vae_params["rnn_params"].pop("readout_v")
-        vae_params["rnn_params"]["readout_from"] = "z_and_v"
-    if "train_noise_obs" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["train_noise_x"] = vae_params["rnn_params"].pop(
-            "train_noise_obs"
-        )
-    if "train_noise_prior" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["train_noise_z"] = vae_params["rnn_params"].pop(
-            "train_noise_prior"
-        )
-    if "train_noise_prior_t0" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["train_noise_z_t0"] = vae_params["rnn_params"].pop(
-            "train_noise_prior_t0"
-        )
-    if "prior_architecture" in vae_params:
-        vae_params["rnn_architecture"] = vae_params.pop("prior_architecture")
-    if vae_params["rnn_architecture"] == "PLRNN":
-        vae_params["rnn_architecture"] = "LRRNN"
+        if "readout_v " in vae_params["rnn_params"]:
+            _ = vae_params["rnn_params"].pop("readout_v")
+            vae_params["rnn_params"]["readout_from"] = "z_and_v"
+        if "train_noise_obs" in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["train_noise_x"] = vae_params["rnn_params"].pop(
+                "train_noise_obs"
+            )
+        if "train_noise_prior" in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["train_noise_z"] = vae_params["rnn_params"].pop(
+                "train_noise_prior"
+            )
+        if "train_noise_prior_t0" in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["train_noise_z_t0"] = vae_params["rnn_params"].pop(
+                "train_noise_prior_t0"
+            )
 
-    if "scalar_noise_x" in vae_params["rnn_params"]:
-        if vae_params["rnn_params"]["scalar_noise_x"] == "Cov":
-            vae_params["rnn_params"]["noise_x"] = "full"
-        elif vae_params["rnn_params"]["scalar_noise_x"] == False:
-            vae_params["rnn_params"]["noise_x"] = "diag"
+        if "scalar_noise_x" in vae_params["rnn_params"]:
+            if vae_params["rnn_params"]["scalar_noise_x"] == "Cov":
+                vae_params["rnn_params"]["noise_x"] = "full"
+            elif vae_params["rnn_params"]["scalar_noise_x"] == False:
+                vae_params["rnn_params"]["noise_x"] = "diag"
+            else:
+                vae_params["rnn_params"]["noise_x"] = "scalar"
+
+        if "scalar_noise_z" in vae_params["rnn_params"]:
+            if vae_params["rnn_params"]["scalar_noise_z"] == "Cov":
+                vae_params["rnn_params"]["noise_z"] = "full"
+            elif vae_params["rnn_params"]["scalar_noise_z"] == False:
+                vae_params["rnn_params"]["noise_z"] = "diag"
+            else:
+                vae_params["rnn_params"]["noise_z"] = "scalar"
+
+        if "scalar_noise_z_t0" in vae_params["rnn_params"]:
+            if vae_params["rnn_params"]["scalar_noise_z_t0"] == "Cov":
+                vae_params["rnn_params"]["noise_z_t0"] = "full"
+            elif vae_params["rnn_params"]["scalar_noise_z_t0"] == False:
+                vae_params["rnn_params"]["noise_z_t0"] = "diag"
+            else:
+                vae_params["rnn_params"]["noise_z_t0"] = "scalar"
+
+        if "readout_rates" in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["readout_from"] = vae_params["rnn_params"].pop(
+                "readout_rates"
+            )
+        if vae_params["rnn_params"]["readout_from"] == "currents":
+            pass
+        elif vae_params["rnn_params"]["readout_from"] == "rates":
+            pass
+        elif vae_params["rnn_params"]["readout_from"] is True:
+            vae_params["rnn_params"]["readout_from"] = "rates"
         else:
-            vae_params["rnn_params"]["noise_x"] = "scalar"
+            vae_params["rnn_params"]["readout_from"] = "z"
 
-    if "scalar_noise_z" in vae_params["rnn_params"]:
-        if vae_params["rnn_params"]["scalar_noise_z"] == "Cov":
-            vae_params["rnn_params"]["noise_z"] = "full"
-        elif vae_params["rnn_params"]["scalar_noise_z"] == False:
-            vae_params["rnn_params"]["noise_z"] = "diag"
+        if "observation" not in vae_params["rnn_params"]:
+            if vae_params["rnn_params"]["identity_readout"]:
+                vae_params["rnn_params"]["observation"] = "one_to_one"
+            else:
+                vae_params["rnn_params"]["observation"] = "affine"
+
+        if (
+            vae_params["rnn_params"]["activation"] == "relu"
+            and "clipped" in vae_params["rnn_params"]
+            and vae_params["rnn_params"]["clipped"]
+        ):
+            vae_params["rnn_params"]["activation"] = "clipped_relu"
+
+        if "out_nonlinearity" not in vae_params["rnn_params"]:
+            if (
+                "observation_likelihood" in training_params
+                and training_params["observation_likelihood"] == "Gauss"
+            ):
+                vae_params["rnn_params"]["obs_nonlinearity"] = "identity"
+            elif "obs_rectify" in vae_params:
+                vae_params["rnn_params"]["obs_nonlinearity"] = vae_params.pop(
+                    "obs_rectify"
+                )
+            else:
+                print("no out nonlinearity found, setting to identity")
+                vae_params["rnn_params"]["obs_nonlinearity"] = "identity"
         else:
-            vae_params["rnn_params"]["noise_z"] = "scalar"
+            vae_params["rnn_params"]["obs_nonlinearity"] = vae_params["rnn_params"].pop(
+                "out_nonlinearity"
+            )
+        if "shared_tau" in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop(
+                "shared_tau"
+            )
+        if "transition" not in vae_params["rnn_params"]:
+            if (
+                "full_rank" in vae_params["rnn_params"]
+                and vae_params["rnn_params"]["full_rank"] == True
+            ):
+                vae_params["rnn_params"]["transition"] = "full_rank"
+            else:
+                vae_params["rnn_params"]["transition"] = "low_rank"
 
-    if "scalar_noise_z_t0" in vae_params["rnn_params"]:
-        if vae_params["rnn_params"]["scalar_noise_z_t0"] == "Cov":
-            vae_params["rnn_params"]["noise_z_t0"] = "full"
-        elif vae_params["rnn_params"]["scalar_noise_z_t0"] == False:
-            vae_params["rnn_params"]["noise_z_t0"] = "diag"
-        else:
-            vae_params["rnn_params"]["noise_z_t0"] = "scalar"
+        if training_params["loss_f"] == "VGTF":
+            training_params["loss_f"] = "smc"
+        elif training_params["loss_f"] == "bs_VGTF":
+            training_params["loss_f"] = "bs_smc"
+        elif training_params["loss_f"] == "opt_VGTF":
+            training_params["loss_f"] = "opt_smc"
 
-    if "readout_rates" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["readout_from"] = vae_params["rnn_params"].pop(
-            "readout_rates"
-        )
-    if vae_params["rnn_params"]["readout_from"] == "currents":
-        pass
-    elif vae_params["rnn_params"]["readout_from"] == "rates":
-        pass
-    elif vae_params["rnn_params"]["readout_from"] is True:
-        vae_params["rnn_params"]["readout_from"] = "rates"
-    else:
-        vae_params["rnn_params"]["readout_from"] = "z"
+        if "observation_likelihood" in training_params:
+            vae_params["rnn_params"]["obs_likelihood"] = training_params.pop(
+                "observation_likelihood"
+            )
+        if "obs_likelihood" not in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["obs_likelihood"] = "Gauss"
 
-    if (
-        vae_params["rnn_params"]["activation"] == "relu"
-        and "clipped" in vae_params["rnn_params"]
-        and vae_params["rnn_params"]["clipped"]
-    ):
-        vae_params["rnn_params"]["activation"] = "clipped_relu"
+        if "sim_v" in training_params:
+            vae_params["rnn_params"]["simulate_input"] = training_params.pop("sim_v")
+        elif "simulate_input" not in vae_params["rnn_params"]:
+            vae_params["rnn_params"]["simulate_input"] = False
 
-    if "out_nonlinearity" not in vae_params["rnn_params"]:
-        if training_params["observation_likelihood"] == "Gauss":
-            vae_params["rnn_params"]["out_nonlinearity"] = "identity"
-        elif "obs_rectify" in vae_params:
-            vae_params["rnn_params"]["out_nonlinearity"] = vae_params.pop("obs_rectify")
-        else:
-            print("no out nonlinearity found, setting to identity")
-            vae_params["rnn_params"]["out_nonlinearity"] = "identity"
-    print(vae_params["rnn_params"]["out_nonlinearity"])
-    if "shared_tau" in vae_params["rnn_params"]:
-        vae_params["rnn_params"]["decay"] = vae_params["rnn_params"].pop("shared_tau")
-
-    if training_params["loss_f"] == "VGTF":
-        training_params["loss_f"] = "smc"
-    elif training_params["loss_f"] == "bs_VGTF":
-        training_params["loss_f"] = "bs_smc"
-    elif training_params["loss_f"] == "opt_VGTF":
-        training_params["loss_f"] = "opt_smc"
     model = VAE(vae_params)
 
-    # More backwards compatibility
     d = torch.load(state_dict_file_rnn, map_location=torch.device("cpu"))
-    for key in list(d.keys()):
-        d[key.replace("latent_step", "transition")] = d.pop(key)
-    if "transition.AW" in list(d.keys()):
-        d["transition.decay"] = d.pop("transition.AW")
-    for key in list(d.keys()):
-        if key not in model.rnn.state_dict().keys():
-            del d[key]
-            print("key " + key + " not found in rnn, deleted")
+    if backward_compat:
+        # More backwards compatibility
+        for key in list(d.keys()):
+            d[key.replace("latent_step", "transition")] = d.pop(key)
+        if "transition.AW" in list(d.keys()):
+            d["transition.decay_param"] = d.pop("transition.AW")
+        if "transition.decay" in list(d.keys()):
+            d["transition.decay_param"] = d.pop("transition.decay")
+        d["transition.decay_param"] = d["transition.decay_param"].view(1)
+        if len(d["observation.Bias"].shape) > 1:
+            d["observation.Bias"] = d["observation.Bias"].view(
+                d["observation.Bias"].shape[1]
+            )
+        if (
+            vae_params["rnn_params"]["observation"] == "one_to_one"
+            and len(d["observation.B"].shape) > 1
+        ):
+            d["observation.B"] = torch.diagonal(
+                d["observation.B"] ** 2
+            )  # square because prev bug...
+
+        for key in list(d.keys()):
+            if key not in model.rnn.state_dict().keys():
+                del d[key]
+                print("key " + key + " not found in rnn, deleted")
+
     model.rnn.load_state_dict(d)
-    if load_encoder:
+
+    if model.has_encoder and load_encoder:
         d = torch.load(state_dict_file_encoder, map_location=torch.device("cpu"))
         for key in list(d.keys()):
             if key not in model.encoder.state_dict().keys():
@@ -208,7 +274,7 @@ def load_model(name, load_encoder=True):
                 print("key " + key + " not found in encoder, deleted")
         model.encoder.load_state_dict(d)
 
-    return model, vae_params, task_params, training_params
+    return model, training_params, task_params
 
 
 class CPU_Unpickler(pickle.Unpickler):
