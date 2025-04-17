@@ -466,7 +466,7 @@ class Affine_observation(nn.Module):
 
 class Transition_LowRank(nn.Module):
     """
-    Latent dynamics of the prior, parameterised by a low-rank RNN
+    Latent dynamics of the transition, parameterised by a low-rank RNN
     """
 
     def __init__(
@@ -599,7 +599,7 @@ class Transition_LowRank(nn.Module):
 
 class Transition_FullRank(nn.Module):
     """
-    Alternative latent dynamics of the prior
+    Alternative latent dynamics of the transition
     parameterised by a full-rank RNN
     """
 

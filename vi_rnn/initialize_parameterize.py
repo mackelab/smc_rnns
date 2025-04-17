@@ -71,27 +71,28 @@ def init_noise(noise_type, dim, init_scale, train_noise):
     return R, std_embed, var_embed
 
 
-def initialize_Ws_uniform(dz, N):
+def initialize_Ws_uniform(dz, N, scale=1.0):
     """Initialize the weights of the network
     Args:
         dz (int): dimensionality of the latent space
         N (int): dimensionality of the data
+        scale (float): scaling factor
     Returns:
         n (nn.Parameter): right singular vecs,  Uniform between -1/sqrt(N) and 1/sqrt(N)
         m (nn.Parameter): left singular vecs,  Uniform between -1/sqrt(dz) and 1/sqrt(dz)
     """
     print("using uniform init")
-    n = uniform_init2d(dz, N)
-    m = uniform_init2d(N, dz)
+    n = uniform_init2d(dz, N) * np.sqrt(scale)
+    m = uniform_init2d(N, dz) * np.sqrt(scale)
     return nn.Parameter(n, requires_grad=True), nn.Parameter(m, requires_grad=True)
 
 
-def initialize_Ws_gauss(dz, N, scaling):
+def initialize_Ws_gauss(dz, N, scale=1.0):
     """Initialize the weights of the network with (correlated) Gaussians
     Args:
         dz (int): dimensionality of the latent space
         N (int): dimensionality of the data
-        scaling (float): scaling factor
+        scale (float): scaling factor
     Returns:
         n (nn.Parameter): right singular vecs, with sd 1/(scaling*sqrt(3 N))
         m (nn.Parameter): left singular vecs, with sd 1/sqrt(3 dz)
@@ -103,8 +104,8 @@ def initialize_Ws_gauss(dz, N, scaling):
         cov[dz + i, i] = 0.6
     chol_cov = torch.linalg.cholesky(cov)
     loadings = chol_cov @ torch.randn(dz * 2, N)
-    n = loadings[:dz, :] / (scaling * np.sqrt(3 * N))
-    m = loadings[dz:, :] / np.sqrt(3 * dz)
+    n = loadings[:dz, :] / (np.sqrt(scale * 3 * N))
+    m = loadings[dz:, :] / np.sqrt(scale * 3 * dz)
     return nn.Parameter(n, requires_grad=True), nn.Parameter(m.T, requires_grad=True)
 
 

@@ -40,12 +40,12 @@ def eval_likelihood_gmm_for_diagonal_cov(z, mu, std):
     T, dim_x = mu.shape
     S, dim_x = z.shape
     z = z.squeeze().unsqueeze(0)
-    precision = 1 / (std ** 2)
+    precision = 1 / (std**2)
     mu = mu.unsqueeze(1)
     vec = z - mu
     exponent = torch.einsum("TSX,TSX->TS", vec, vec)
     exponent *= precision
-    sqrt_det_of_cov = std ** dim_x
+    sqrt_det_of_cov = std**dim_x
     likelihood = torch.exp(-0.5 * exponent) / sqrt_det_of_cov
     return likelihood.sum(dim=0) / T
 

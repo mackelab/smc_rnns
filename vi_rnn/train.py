@@ -195,7 +195,12 @@ def train_VAE(
             optimizer.zero_grad()
 
             Loss_it, _, alphas = inference_f(
-                vae, data, stim, training_params["k"], training_params["resample"]
+                vae,
+                data,
+                stim,
+                training_params["k"],
+                training_params["resample"],
+                training_params["t_forward"] if "t_forward" in training_params else 0,
             )
 
             batch_ll += Loss_it.mean().item()
