@@ -147,13 +147,18 @@ def generate(
         optimal_proposal = True
 
     with torch.no_grad():
-        if len(x.shape) == 2:
-            x = x.unsqueeze(0)  # add trial dim if not used
+        if x is not None: 
+            if len(x.shape) == 2:
+                x = x.unsqueeze(0)  # add trial dim if not used
+            bs_x = x.shape[0]
+        else:
+            bs_x = 1
+            
         if u is None:
             if dur is not None:
-                u = torch.zeros(x.shape[0], 0, dur)
+                u = torch.zeros(bs_x, 0, dur)
             else:
-                u = torch.zeros(x.shape[0], 0, x.shape[2])
+                u = torch.zeros(bs_x, 0, x.shape[2])
         if dur is None:
             dur = u.shape[2]
         else:
