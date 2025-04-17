@@ -381,7 +381,7 @@ def filtering_posterior(
             loc=transition_mean, scale=torch.sqrt(eff_var_transition)
         )
         Qz = Q_dist.rsample()
-        mean_x = vae.rnn.observation(Qz)
+        mean_x = vae.rnn.observation(Qz, v=v)
         ll_x = ll_x_func(x_hat[:, :, t], mean_x)
         log_w = ll_x
 
